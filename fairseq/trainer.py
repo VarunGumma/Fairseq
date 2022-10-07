@@ -1124,6 +1124,9 @@ class Trainer(object):
             sample, is_dummy_batch = self._prepare_sample(sample)
 
             try:
+                if self.perform_distillation:
+                    with torch.no_grad():
+                        sample["teacher_output"] = self.teacher_model(**sample["net_input"])
                 _loss, sample_size, logging_output = self.task.valid_step(
                     sample, self.model, self.criterion, **extra_kwargs
                 )
