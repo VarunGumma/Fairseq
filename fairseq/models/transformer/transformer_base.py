@@ -48,6 +48,12 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
         self.cfg = cfg
         self.supports_align_args = True
 
+    def set_encoder_output(self, encoder_out):
+        self.encoder_out = encoder_out
+
+    def get_encoder_output(self):
+        return self.encoder_out
+
     @classmethod
     def add_args(cls, parser):
         """Add model-specific arguments to the parser."""
@@ -129,12 +135,12 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
                 utils.load_embedding(embed_dict, dictionary, emb)
         else:
             emb = FactorizedEmbedding(
-                num_embeddings, 
-                embed_dim, 
-                padding_idx=padding_idx,
-                hid_dim=cfg.factorized_embedding_dim,
-                layernorm=cfg.layernorm_factorized_embedding
-            )
+                    num_embeddings, 
+                    embed_dim, 
+                    padding_idx=padding_idx,
+                    hid_dim=cfg.factorized_embedding_dim,
+                    layernorm=cfg.layernorm_factorized_embedding
+                )
             if path:
                 raise NotImplementedError
         return emb
@@ -171,7 +177,9 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
         which are not supported by TorchScript.
         """
         encoder_out = self.encoder(
-            src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
+            src_tokens, 
+            src_lengths=src_lengths, 
+            return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
             prev_output_tokens,
@@ -182,6 +190,7 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
             src_lengths=src_lengths,
             return_all_hiddens=return_all_hiddens,
         )
+        self.set_encoder_output(encoder_out["encoder_out"][0].transpose(0, 1))
         return decoder_out
 
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,

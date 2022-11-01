@@ -95,6 +95,10 @@ class QuantNoiseConfig(FairseqDataclass):
 
 @dataclass
 class TransformerConfig(FairseqDataclass):
+    save_encoder_output: bool = field(
+        default=False,
+        metadata={"help": "save the encoder output of the transformer to retrieve later"}
+    )
     use_factorized_embedding: bool = field(
         default=False,
         metadata={"help": "use factorized embeddings instead of regular embeddings. Factorized embeddings use lesser number of parameters"}
