@@ -178,7 +178,8 @@ class KDLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
             self.queue = torch.cuda.FloatTensor([])
 
         # projector
-        self.projector = Projector(student_dim, teacher_dim, activation="gelu") if self.use_cosine_similarity_loss else None
+        self.projector_e = Projector(student_dim, teacher_dim, activation="gelu") if self.use_cosine_similarity_loss else None
+        self.projector_d = Projector(student_dim, teacher_dim, activation="gelu") if self.use_cosine_similarity_loss else None
 
     
     def get_lang_kd_rates(self, indices, T=1):
@@ -283,7 +284,7 @@ class KDLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         for (h_s, h_t) in zip(student_encoder_output["encoder_states"], teacher_encoder_output["encoder_states"]):
             h_t = h_t.contiguous().view(-1, h_t.size(-1))
             h_s = h_s.contiguous().view(-1, h_s.size(-1))
-            h_s = self.projector(h_s)
+            h_s = self.projector_e(h_s)
             _total_loss += F.cosine_embedding_loss(
                 h_s, 
                 h_t,
@@ -299,7 +300,7 @@ class KDLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         for (h_s, h_t) in zip(student_output[1]["inner_states"], teacher_output[1]["inner_states"]):
             h_t = h_t.contiguous().view(-1, h_t.size(-1))
             h_s = h_s.contiguous().view(-1, h_s.size(-1))
-            h_s = self.projector(h_s)
+            h_s = self.projector_d(h_s)
             _total_loss += F.cosine_embedding_loss(
                 h_s, 
                 h_t,
