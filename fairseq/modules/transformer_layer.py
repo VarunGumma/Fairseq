@@ -13,7 +13,8 @@ from fairseq import utils
 from fairseq.models.transformer import TransformerConfig
 from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
-from fairseq.modules import LayerNorm, MultiheadAttention, NativeMultiheadAttention, RMSNorm
+from fairseq.modules.rms_norm import RMSNorm
+from fairseq.modules import LayerNorm, MultiheadAttention, NativeMultiheadAttention
 
 
 class TransformerEncoderLayerBase(nn.Module):
@@ -40,7 +41,7 @@ class TransformerEncoderLayerBase(nn.Module):
         self.quant_noise_block_size = cfg.quant_noise.pq_block_size
         self.use_native_attention = cfg.use_native_attention
         self.self_attn = self.build_self_attention(self.embed_dim, cfg)
-        self.self_attn_layer_norm = self.normalization(self, self.embed_dim, rms=cfg.encoder.use_rmsnorm)
+        self.self_attn_layer_norm = self.normalization(self.embed_dim, rms=cfg.encoder.use_rmsnorm)
 
         self.dropout_module = FairseqDropout(
             cfg.dropout, module_name=self.__class__.__name__
@@ -81,7 +82,7 @@ class TransformerEncoderLayerBase(nn.Module):
         else:
             self.gate_fc = None
 
-        self.final_layer_norm = self.normalization(self, self.embed_dim, rms=cfg.encoder.use_rmsnorm)
+        self.final_layer_norm = self.normalization(self.embed_dim, rms=cfg.encoder.use_rmsnorm)
 
     def build_fc1(self, input_dim, output_dim, bias, q_noise, qn_block_size):
         return quant_noise(
