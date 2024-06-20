@@ -27,6 +27,8 @@ from fairseq.modules import (
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 # rewrite name for backward compatibility in `make_generation_fast_`
 def module_name_fordropout(module_name: str) -> str:
@@ -135,7 +137,9 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         self.num_layers = len(self.layers)
 
         if cfg.decoder.normalize_before and not cfg.no_decoder_final_norm:
-            self.layer_norm = self.normalization(self.embed_dim, rms=cfg.decoder.use_rmsnorm)
+            self.layer_norm = self.normalization(
+                self.embed_dim, rms=cfg.decoder.use_rmsnorm
+            )
         else:
             self.layer_norm = None
 

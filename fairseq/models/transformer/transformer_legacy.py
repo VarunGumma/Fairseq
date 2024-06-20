@@ -301,7 +301,7 @@ def _transformer_base18L(args):
     args.activation_fn = getattr(args, "activation_fn", "gelu")
     args.encoder_layers = getattr(args, "encoder_layers", 18)
     args.decoder_layers = getattr(args, "decoder_layers", 18)
-    args.layernorm_embedding = getattr(args, "layernorm_embedding", True)
+    args.layernorm_embedding = getattr(args, "layernorm_embedding", False)
     args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
     args.decoder_normalize_before = getattr(args, "decoder_normalize_before", True)
     base_architecture(args)
@@ -309,9 +309,8 @@ def _transformer_base18L(args):
 
 @register_model_architecture("transformer", "transformer_IT2_dist")
 def transformer_base18L(args):
-    args.share_decoder_input_output_embed = getattr(
-        args, "share_decoder_input_output_embed", True
-    )
+    args.layernorm_embedding = getattr(args, "layernorm_embedding", True)
+    args.share_decoder_input_output_embed = getattr(args, "share_decoder_input_output_embed", True)
     _transformer_base18L(args)
 
 

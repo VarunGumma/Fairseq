@@ -45,10 +45,9 @@ from fairseq.modules.lora import LoRALayer, LoRALinear, LoRAEmbedding
 
 
 # copied from: https://github.com/microsoft/LoRA/blob/main/loralib/utils.py
-def mark_only_lora_as_trainable(model: torch.nn.Module, bias: str = "none") -> None:
+def mark_only_lora_as_trainable(model, bias) -> None:
     for n, p in model.named_parameters():
-        if "lora_" not in n:
-            p.requires_grad = False
+        p.requires_grad = "lora_" in n
     if bias == "none":
         return
     elif bias == "all":
@@ -226,11 +225,10 @@ def main(cfg: FairseqConfig) -> None:
             "merge_weights": True,
         }
 
-        lora_modules = lora_config["target_modules"].split(",")
+        lora_modules = set(lora_config["target_modules"].split(","))
         lora_bias = lora_config.get("bias", "none")
         replace_with_lora(model, lora_modules, lora_params)
         mark_only_lora_as_trainable(model, bias=lora_bias)
-        print(model)
     ### EXPERIMENTAL :: NOT TO BE USED UNTIL TESTED ###
 
     logger.info(
