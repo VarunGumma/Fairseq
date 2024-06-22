@@ -228,8 +228,6 @@ def base_architecture(args):
     args.tie_adaptive_weights = getattr(args, "tie_adaptive_weights", False)
     args.checkpoint_activations = getattr(args, "checkpoint_activations", False)
     args.offload_activations = getattr(args, "offload_activations", False)
-    if args.offload_activations:
-        args.checkpoint_activations = True
     args.encoder_layers_to_keep = getattr(args, "encoder_layers_to_keep", None)
     args.decoder_layers_to_keep = getattr(args, "decoder_layers_to_keep", None)
     args.encoder_layerdrop = getattr(args, "encoder_layerdrop", 0)
@@ -237,6 +235,9 @@ def base_architecture(args):
     args.quant_noise_pq = getattr(args, "quant_noise_pq", 0)
     args.quant_noise_pq_block_size = getattr(args, "quant_noise_pq_block_size", 8)
     args.quant_noise_scalar = getattr(args, "quant_noise_scalar", 0)
+
+    if args.offload_activations:
+        args.checkpoint_activations = True
 
 
 @register_model_architecture("transformer", "transformer_iwslt_de_en")
@@ -296,26 +297,22 @@ def transformer_wmt_en_de_big_t2t(args):
 ######################################################### CUSTOM ARCHITECTURES #########################################################
 
 
-@register_model_architecture("transformer", "transformer_base18L")
-def _transformer_base18L(args):
+@register_model_architecture("transformer", "transformer_IT2_dist")
+def transformer_IT2_dist(args):
     args.activation_fn = getattr(args, "activation_fn", "gelu")
     args.encoder_layers = getattr(args, "encoder_layers", 18)
     args.decoder_layers = getattr(args, "decoder_layers", 18)
-    args.layernorm_embedding = getattr(args, "layernorm_embedding", False)
     args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
     args.decoder_normalize_before = getattr(args, "decoder_normalize_before", True)
+    args.layernorm_embedding = getattr(args, "layernorm_embedding", True)
+    args.share_decoder_input_output_embed = getattr(
+        args, "share_decoder_input_output_embed", True
+    )
     base_architecture(args)
 
 
-@register_model_architecture("transformer", "transformer_IT2_dist")
-def transformer_base18L(args):
-    args.layernorm_embedding = getattr(args, "layernorm_embedding", True)
-    args.share_decoder_input_output_embed = getattr(args, "share_decoder_input_output_embed", True)
-    _transformer_base18L(args)
-
-
 @register_model_architecture("transformer", "transformer_IT2")
-def transformer_deep(args):
+def transformer_IT2(args):
     args.activation_fn = getattr(args, "activation_fn", "gelu")
     args.encoder_layers = getattr(args, "encoder_layers", 18)
     args.decoder_layers = getattr(args, "decoder_layers", 18)

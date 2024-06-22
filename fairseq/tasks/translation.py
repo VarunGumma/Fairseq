@@ -490,8 +490,8 @@ class TranslationTask(FairseqTask):
                 )
             )
         if self.cfg.eval_bleu_print_samples:
-            logger.info("example hypothesis: " + hyps[0])
-            logger.info("example reference: " + refs[0])
+            logger.info(f"Example Hypothesis: {hyps[0]}")
+            logger.info(f"Example Reference: {refs[0]}")
         if self.cfg.eval_tokenized_bleu:
             return sacrebleu.corpus_bleu(hyps, [refs], tokenize="none")
         else:
