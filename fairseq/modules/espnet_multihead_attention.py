@@ -11,7 +11,10 @@ import math
 import torch
 from torch import nn
 
-from fairseq.modules.rotary_positional_embedding import RotaryEmbedding
+from fairseq.modules.rotary_positional_embedding import (
+    RotaryPositionalEmbedding,
+    apply_rotary_pos_emb,
+)
 
 
 class ESPNETMultiHeadedAttention(nn.Module):
@@ -211,7 +214,9 @@ class RotaryPositionMultiHeadedAttention(ESPNETMultiHeadedAttention):
         if precision == "fp16":
             precision = torch.half
 
-        self.rotary_emb = RotaryEmbedding(self.rotary_ndims, base=rotary_emd_base)
+        self.rotary_emb = RotaryPositionalEmbedding(
+            self.rotary_ndims, base=rotary_emd_base, precision=precision
+        )
 
     def forward(self, query, key, value, key_padding_mask=None, **kwargs):
         """Compute rotary position attention.
@@ -230,9 +235,10 @@ class RotaryPositionMultiHeadedAttention(ESPNETMultiHeadedAttention):
         query = query.view(T, B, self.h, self.d_k)
         key = key.view(T, B, self.h, self.d_k)
         value = value.view(T, B, self.h, self.d_k)
-
-        query = self.rotary_emb.rotate_queries_or_keys(query)
-        key = self.rotary_emb.rotate_queries_or_keys(key)
+        cos, sin = self.rotary_emb(value, seq_len=T)
+        query, key = apply_rotary_pos_emb(
+            query, key, cos, sin, offset=0
+        )  # offset is based on layer_past
 
         query = query.view(T, B, self.h * self.d_k)
         key = key.view(T, B, self.h * self.d_k)

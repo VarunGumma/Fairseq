@@ -14,7 +14,8 @@ from fairseq import utils
 from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
 from fairseq.modules.multihead_attention import MultiheadAttention
-from fairseq.modules.rotary_positional_embedding import RotaryEmbedding
+from fairseq.modules.xpos import XPOS
+from fairseq.modules.rope import ROPE
 
 
 class NativeMultiheadAttention(MultiheadAttention):
@@ -39,6 +40,7 @@ class NativeMultiheadAttention(MultiheadAttention):
         q_noise=0.0,
         qn_block_size=8,
         rope_args=None,
+        is_decoder=False,
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
@@ -51,6 +53,8 @@ class NativeMultiheadAttention(MultiheadAttention):
             dropout, module_name=self.__class__.__name__
         )
 
+        self.is_decoder = is_decoder
+
         self.head_dim = embed_dim // num_heads
         assert (
             self.head_dim * num_heads == self.embed_dim
@@ -62,19 +66,20 @@ class NativeMultiheadAttention(MultiheadAttention):
 
         self.rope_args = json.loads(rope_args) if rope_args is not None else None
 
-        if self.rope_args is not None:
-            self.rotary_pos_embed = RotaryEmbedding(
-                dim=(self.head_dim // 2),
-                freqs_for="lang",
-                cache_if_possible=True,
-                theta=self.rope_args.get("theta", 10000),
-                learned_freq=self.rope_args.get("learned_freq", False),
-                use_xpos=self.rope_args.get("use_xpos", False),
-                xpos_scale_base=self.rope_args.get("xpos_scale_base", 512),
-                interpolate_factor=self.rope_args.get("interpolate_factor", 1.0),
-                theta_rescale_factor=self.rope_args.get("theta_rescale_factor", 1.0),
-            )
+        if self.rope_args is not None and self.self_attention:
             self.use_xpos = self.rope_args.get("use_xpos", False)
+            bias = False
+
+            if self.use_xpos:
+                self.rotary_pos_embed = XPOS(
+                    head_dim=self.head_dim,
+                    base=self.rope_args.get("base", 10000),
+                    scale_base=self.rope_args.get("xpos_scale_base", 512),
+                )
+            else:
+                self.rotary_pos_embed = ROPE(
+                    head_dim=self.head_dim, base=self.rope_args.get("base", 10000)
+                )
         else:
             self.rotary_pos_embed = None
 
@@ -107,6 +112,17 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.reset_parameters()
 
         self.init_incremental_state()
+
+    def is_first_step(self, saved_state):
+        if saved_state is None:
+            return True
+        elif (
+            saved_state["prev_key"] is not None
+            and saved_state["prev_key"].shape[2] == 1
+        ):
+            return True
+        else:
+            return False
 
     def forward(
         self,
@@ -270,19 +286,20 @@ class NativeMultiheadAttention(MultiheadAttention):
         assert k.size(1) == src_len
 
         if self.rotary_pos_embed is not None:
-            # q shape: [bsz * num_heads, tgt_len, head_dim]
-            q_ = q.view(kv_bsz, self.num_heads, -1, self.head_dim)
-            k_ = k.view(kv_bsz, self.num_heads, -1, self.head_dim)
-
-            if not self.use_xpos:
-                q_ = self.rotary_pos_embed.rotate_queries_or_keys(q_)
-                k_ = self.rotary_pos_embed.rotate_queries_or_keys(k_)
+            if self.use_xpos:
+                offset = (
+                    (src_len - 1)
+                    if (
+                        incremental_state is not None
+                        and not self.is_first_step(saved_state)
+                    )
+                    else 0
+                )
+                q = self.rotary_pos_embed(q, offset=offset, downscale=False)
+                k = self.rotary_pos_embed(k, offset=0, downscale=True)
             else:
-                q_, k_ = self.rotary_pos_embed.rotate_queries_and_keys(q_, k_)
-
-            # reshape back to [bsz * num_heads, tgt_len, head_dim]
-            q = q_.view(kv_bsz * self.num_heads, -1, self.head_dim)
-            k = k_.view(kv_bsz * self.num_heads, -1, self.head_dim)
+                q = self.rotary_pos_embed(q)
+                k = self.rotary_pos_embed(k)
 
         assert k.size(1) == src_len
 

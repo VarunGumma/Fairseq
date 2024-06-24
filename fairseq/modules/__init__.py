@@ -48,12 +48,14 @@ from .espnet_multihead_attention import (
     RelPositionMultiHeadedAttention,
     RotaryPositionMultiHeadedAttention,
 )
-from .rotary_positional_embedding import RotaryEmbedding
+from .rotary_positional_embedding import RotaryPositionalEmbedding
 from .positional_encoding import (
     RelPositionalEncoding,
 )
 
 from .rms_norm import RMSNorm
+from .xpos import XPOS
+from .rope import ROPE
 
 __all__ = [
     "AdaptiveInput",
@@ -107,7 +109,9 @@ __all__ = [
     "PositionalEmbedding",
     "RelPositionMultiHeadedAttention",
     "RelPositionalEncoding",
-    "RotaryEmbedding",
+    "RotaryPositionalEmbedding",
     "RotaryPositionMultiHeadedAttention",
     "RMSNorm",
+    "XPOS",
+    "ROPE",
 ]
