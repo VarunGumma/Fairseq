@@ -68,8 +68,6 @@ class NativeMultiheadAttention(MultiheadAttention):
 
         if self.rope_args is not None and self.self_attention:
             self.use_xpos = self.rope_args.get("use_xpos", False)
-            bias = False
-
             if self.use_xpos:
                 self.rotary_pos_embed = XPOS(
                     head_dim=self.head_dim,
@@ -78,7 +76,9 @@ class NativeMultiheadAttention(MultiheadAttention):
                 )
             else:
                 self.rotary_pos_embed = ROPE(
-                    head_dim=self.head_dim, base=self.rope_args.get("base", 10000)
+                    head_dim=self.head_dim,
+                    base=self.rope_args.get("base", 10000),
+                    max_positions=self.rope_args.get("max_positions", 512),
                 )
         else:
             self.rotary_pos_embed = None
@@ -300,8 +300,6 @@ class NativeMultiheadAttention(MultiheadAttention):
             else:
                 q = self.rotary_pos_embed(q)
                 k = self.rotary_pos_embed(k)
-
-        assert k.size(1) == src_len
 
         # This is part of a workaround to get around fork/join parallelism
         # not supporting Optional types.
