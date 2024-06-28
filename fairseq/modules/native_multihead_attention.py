@@ -11,11 +11,10 @@ from torch import Tensor, nn
 from torch.nn import Parameter
 
 from fairseq import utils
+from einops import rearrange
 from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
 from fairseq.modules.multihead_attention import MultiheadAttention
-from fairseq.modules.xpos import XPOS
-from fairseq.modules.rope import ROPE
 
 
 class NativeMultiheadAttention(MultiheadAttention):
@@ -40,7 +39,6 @@ class NativeMultiheadAttention(MultiheadAttention):
         q_noise=0.0,
         qn_block_size=8,
         rope_args=None,
-        is_decoder=False,
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
@@ -52,8 +50,6 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.dropout_module = FairseqDropout(
             dropout, module_name=self.__class__.__name__
         )
-
-        self.is_decoder = is_decoder
 
         self.head_dim = embed_dim // num_heads
         assert (
@@ -67,19 +63,17 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.rope_args = json.loads(rope_args) if rope_args is not None else None
 
         if self.rope_args is not None and self.self_attention:
-            self.use_xpos = self.rope_args.get("use_xpos", False)
-            if self.use_xpos:
-                self.rotary_pos_embed = XPOS(
-                    head_dim=self.head_dim,
-                    base=self.rope_args.get("base", 10000),
-                    scale_base=self.rope_args.get("xpos_scale_base", 512),
-                )
-            else:
-                self.rotary_pos_embed = ROPE(
-                    head_dim=self.head_dim,
-                    base=self.rope_args.get("base", 10000),
-                    max_positions=self.rope_args.get("max_positions", 512),
-                )
+            from rotary_embedding_torch import RotaryEmbedding
+
+            self.rotary_pos_embed = RotaryEmbedding(
+                dim=self.head_dim,
+                freqs_for="lang",
+                use_xpos=False,
+                seq_before_head_dim=False,
+                cache_if_possible=True,
+                theta=self.rope_args.get("base", 10000),
+                learned_freq=self.rope_args.get("learned_freq", False),
+            )
         else:
             self.rotary_pos_embed = None
 
@@ -208,6 +202,7 @@ class NativeMultiheadAttention(MultiheadAttention):
             q = self.q_proj(query)
             k = self.k_proj(key)
             v = self.v_proj(value)
+
         q *= self.scaling
 
         if self.bias_k is not None:
@@ -286,20 +281,17 @@ class NativeMultiheadAttention(MultiheadAttention):
         assert k.size(1) == src_len
 
         if self.rotary_pos_embed is not None:
-            if self.use_xpos:
-                offset = (
-                    (src_len - 1)
-                    if (
-                        incremental_state is not None
-                        and not self.is_first_step(saved_state)
-                    )
-                    else 0
-                )
-                q = self.rotary_pos_embed(q, offset=offset, downscale=False)
-                k = self.rotary_pos_embed(k, offset=0, downscale=True)
+            q_ = rearrange(q, "(b h) t d -> b h t d", h=self.num_heads)
+            k_ = rearrange(k, "(b h) t d -> b h t d", h=self.num_heads)
+
+            if incremental_state is not None and not self.is_first_step(saved_state):
+                q_, k_ = self.rotary_pos_embed.rotate_queries_with_cached_keys(q_, k_)
             else:
-                q = self.rotary_pos_embed(q)
-                k = self.rotary_pos_embed(k)
+                q_ = self.rotary_pos_embed.rotate_queries_or_keys(q_)
+                k_ = self.rotary_pos_embed.rotate_queries_or_keys(k_)
+
+            q = rearrange(q_, "b h t d -> (b h) t d", h=self.num_heads)
+            k = rearrange(k_, "b h t d -> (b h) t d", h=self.num_heads)
 
         # This is part of a workaround to get around fork/join parallelism
         # not supporting Optional types.

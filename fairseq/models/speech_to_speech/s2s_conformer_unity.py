@@ -7,7 +7,6 @@ import copy
 import logging
 
 from fairseq.models import (
-    FairseqEncoder,
     FairseqEncoderModel,
     FairseqLanguageModel,
     register_model,

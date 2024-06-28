@@ -15,7 +15,6 @@ import fairseq
 from fairseq import utils
 from fairseq.checkpoint_utils import load_model_ensemble_and_task
 from fairseq.scoring.bleu import SacrebleuScorer
-from fairseq.tasks import import_tasks
 from tests.speech import TestFairseqSpeech
 
 

@@ -5,7 +5,7 @@
 
 import torch
 
-from fairseq.data import BaseWrapperDataset, data_utils
+from fairseq.data import BaseWrapperDataset
 
 
 class AddClassTargetDataset(BaseWrapperDataset):

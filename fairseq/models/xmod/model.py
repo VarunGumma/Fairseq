@@ -13,7 +13,6 @@ from fairseq.models.xmod.hub_interface import XMODHubInterface
 import torch
 from fairseq.distributed import fsdp_wrap
 from fairseq.models import (
-    FairseqDataclass,
     register_model,
     register_model_architecture,
 )

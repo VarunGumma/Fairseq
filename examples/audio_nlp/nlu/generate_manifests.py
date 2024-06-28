@@ -4,7 +4,7 @@ import soundfile
 
 
 def get_insl_frame(parse):
-    out = []
+    pass
 
     def is_ont_token(tok):
         return tok[0] in ["[", "]"]

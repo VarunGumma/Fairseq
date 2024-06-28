@@ -26,7 +26,7 @@ from fairseq.models.wav2vec.wav2vec2 import (
     ConvFeatureExtractionModel,
     TransformerEncoder,
 )
-from omegaconf import II, MISSING, open_dict
+from omegaconf import II, MISSING
 from fairseq.modules import GradMultiply, LayerNorm
 from fairseq.tasks.multires_hubert_pretraining import (
     MultiresHubertPretrainingConfig,

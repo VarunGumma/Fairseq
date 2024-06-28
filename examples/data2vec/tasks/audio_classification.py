@@ -8,7 +8,6 @@
 import logging
 import os
 import numpy as np
-import math
 import torch
 
 from sklearn import metrics as sklearn_metrics

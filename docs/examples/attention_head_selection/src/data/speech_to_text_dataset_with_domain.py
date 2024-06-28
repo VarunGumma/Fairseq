@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 import torch
-from fairseq.data import ConcatDataset, Dictionary, FairseqDataset, ResamplingDataset
+from fairseq.data import ConcatDataset, Dictionary, ResamplingDataset
 from fairseq.data.audio.data_cfg import S2TDataConfig
 from fairseq.data.audio.speech_to_text_dataset import (
     SpeechToTextDatasetItem,

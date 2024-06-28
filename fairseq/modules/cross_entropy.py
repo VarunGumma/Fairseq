@@ -22,7 +22,6 @@ def _cross_entropy_pytorch(logits, target, ignore_index=None, reduction="mean"):
 
 
 try:
-    import xentropy_cuda
     from apex.contrib import xentropy
 
     def cross_entropy(logits, target, ignore_index=-100, reduction="mean"):

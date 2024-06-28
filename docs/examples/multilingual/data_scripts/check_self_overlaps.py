@@ -7,7 +7,6 @@
 import os
 import glob
 import argparse
-from utils.dedup import deup
 import sys
 
 WORKDIR_ROOT = os.environ.get("WORKDIR_ROOT", None)

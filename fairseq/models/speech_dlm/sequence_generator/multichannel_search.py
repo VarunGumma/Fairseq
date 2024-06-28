@@ -72,7 +72,6 @@ class MultichannelSearch(nn.Module):
         Returns:
             *encoder_out* rearranged according to *new_order*
         """
-        pass
 
     def prune_sentences(self, batch_idxs: Tensor):
         """
@@ -83,7 +82,6 @@ class MultichannelSearch(nn.Module):
         Args:
             batch_idxs: Indices of *sentences* whose constraint state should be *kept*.
         """
-        pass
 
     def update_constraints(self, active_hypos: Tensor):
         """
@@ -96,7 +94,6 @@ class MultichannelSearch(nn.Module):
               list of integers denoting, for each sentence, which beam candidate items
               should be kept.
         """
-        pass
 
 
 def unravel_index(index, shape):

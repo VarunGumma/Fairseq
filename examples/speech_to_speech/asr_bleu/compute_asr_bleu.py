@@ -1,5 +1,4 @@
 import os
-from typing import Dict, List
 import sacrebleu
 import pandas as pd
 from glob import glob

@@ -6,7 +6,6 @@
 from typing import Dict, Optional, Tuple
 
 import torch
-import torch.nn.functional as F
 from torch import Tensor, nn
 
 from fairseq import utils

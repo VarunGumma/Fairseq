@@ -7,7 +7,6 @@ import logging
 import os
 import sys
 
-import soundfile as sf
 import torch
 import torchaudio
 

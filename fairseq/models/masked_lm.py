@@ -17,7 +17,6 @@ from fairseq.models import (
 )
 from fairseq.modules import (
     LayerNorm,
-    SinusoidalPositionalEmbedding,
     TransformerSentenceEncoder,
 )
 from fairseq.modules.transformer_sentence_encoder import init_bert_params

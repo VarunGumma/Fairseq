@@ -163,7 +163,6 @@ class BaseProgressBar(object):
 
     def update_config(self, config):
         """Log latest configuration."""
-        pass
 
     def _str_commas(self, stats):
         return ", ".join(key + "=" + stats[key].strip() for key in stats.keys())
@@ -251,11 +250,9 @@ class NoopProgressBar(BaseProgressBar):
 
     def log(self, stats, tag=None, step=None):
         """Log intermediate stats according to log_interval."""
-        pass
 
     def print(self, stats, tag=None, step=None):
         """Print end-of-epoch stats."""
-        pass
 
 
 class SimpleProgressBar(BaseProgressBar):

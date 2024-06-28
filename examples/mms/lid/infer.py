@@ -1,8 +1,8 @@
 import torch
 from fairseq.data.text_compressor import TextCompressionLevel, TextCompressor
-from fairseq import checkpoint_utils, distributed_utils, options, utils
-from fairseq import checkpoint_utils, data, options, tasks
-from fairseq.data import FileAudioDataset, AddTargetDataset, Dictionary
+from fairseq import checkpoint_utils, options, utils
+from fairseq import checkpoint_utils, options
+from fairseq.data import FileAudioDataset, AddTargetDataset
 from fairseq.tasks.audio_classification import LabelEncoder
 import copy
 from tqdm import tqdm
@@ -57,7 +57,6 @@ def resample_data(source, padding_mask, n_sample, max_sample_len):
     # source: BxT
     # padding_mask: BxT
     B = source.shape[0]
-    T = source.shape[1]
     sources = []
     padding_masks = []
     if B == 1:

@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass, field
 
 import numpy as np
-from omegaconf import II, MISSING, OmegaConf
+from omegaconf import II, MISSING
 
 from fairseq import utils
 from fairseq.data import (

@@ -8,7 +8,6 @@ import os
 import sys
 
 import fairseq
-import soundfile as sf
 import torch
 import torch.nn.functional as F
 

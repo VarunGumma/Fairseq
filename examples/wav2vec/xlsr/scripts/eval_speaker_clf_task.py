@@ -10,11 +10,9 @@ Usage:
 """
 
 import numpy as np
-import sklearn
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
-import ipdb
 import logging
 import argparse
 from scipy.special import softmax

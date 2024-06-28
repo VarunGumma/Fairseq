@@ -1,4 +1,3 @@
-import os.path as osp
 import re
 from collections import defaultdict
 

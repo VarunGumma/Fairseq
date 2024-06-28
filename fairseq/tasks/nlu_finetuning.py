@@ -290,8 +290,6 @@ class NLUFinetuningTask(AudioPretrainingTask):
             ref = "".join(ref_list).strip()
             num_chars += len(ref)
             num_char_errors += editdistance.eval(hyp, ref)
-            hyp_words = hyp.split()
-            ref_words = ref.split()
             hyp_tree = [word for word in hyp_list if ("[" in word or "]" in word)]
             ref_tree = [word for word in ref_list if ("[" in word or "]" in word)]
             # num_word_errors += editdistance.eval(hyp_words, ref_words)

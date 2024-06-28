@@ -3,24 +3,18 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import contextlib
 import logging
-from argparse import Namespace
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from omegaconf import II, MISSING, open_dict
 
-from fairseq import checkpoint_utils, tasks, utils
-from fairseq.dataclass import ChoiceEnum, FairseqDataclass
-from fairseq.dataclass.utils import convert_namespace_to_omegaconf
-from fairseq.models import BaseFairseqModel, FairseqEncoder, register_model
-from fairseq.models.wav2vec.wav2vec2 import MASKING_DISTRIBUTION_CHOICES, Wav2Vec2Config
+from fairseq import utils
+from fairseq.dataclass import ChoiceEnum
+from fairseq.models import BaseFairseqModel, register_model
 from fairseq.models.wav2vec.wav2vec2_asr import (
-    Embedding,
     Linear,
     Wav2VecEncoder,
     Wav2Vec2AsrConfig,

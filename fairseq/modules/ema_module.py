@@ -11,7 +11,6 @@ import logging
 
 import torch
 
-from omegaconf import II
 from fairseq.dataclass import FairseqDataclass
 
 try:

@@ -1,10 +1,8 @@
 from pathlib import Path
 import os
-import sys
 import argparse
 import random
 import numpy as np
-from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from build_translation_manifests import get_utt_id
 

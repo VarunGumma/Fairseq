@@ -496,7 +496,6 @@ class Data2VecMultiModel(BaseFairseqModel):
                 encoder_mask,
             )
             xs.append(dx)
-            orig_x = x
 
         assert len(xs) > 0
 

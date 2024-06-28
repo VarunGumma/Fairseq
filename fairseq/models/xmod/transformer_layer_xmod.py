@@ -5,9 +5,8 @@
 
 from fairseq.modules.transformer_layer import (
     TransformerEncoderLayer,
-    TransformerDecoderLayer,
 )
-from typing import Dict, List, Optional
+from typing import Optional
 import torch
 import torch.nn as nn
 from fairseq import utils

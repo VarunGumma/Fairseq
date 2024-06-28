@@ -25,7 +25,6 @@ from emotion_models.duration_predictor import load_ckpt as load_duration_predict
 from dataset import (
     load_audio,
     MAX_WAV_VALUE,
-    parse_style,
     parse_speaker,
     EMOV_SPK2ID,
     EMOV_STYLE2ID,

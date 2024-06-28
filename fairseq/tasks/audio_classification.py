@@ -6,28 +6,24 @@
 # can be found in the PATENTS file in the same directory.
 
 from collections import OrderedDict
-import itertools
 import logging
 import os
-import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
 import torch
-from omegaconf import II, MISSING
 from sklearn import metrics as sklearn_metrics
 
-from fairseq.data import AddTargetDataset, Dictionary, FileAudioDataset
+from fairseq.data import AddTargetDataset, Dictionary
 from fairseq.data.multi_corpus_dataset import MultiCorpusDataset
 from fairseq.data.text_compressor import TextCompressionLevel, TextCompressor
-from fairseq.dataclass import FairseqDataclass
 from fairseq.tasks.audio_pretraining import AudioPretrainingConfig, AudioPretrainingTask
 from fairseq.tasks.audio_finetuning import label_len_fn, LabelEncoder
 
 from .. import utils
 from ..logging import metrics
-from . import FairseqTask, register_task
+from . import register_task
 
 logger = logging.getLogger(__name__)
 

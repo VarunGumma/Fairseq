@@ -13,9 +13,6 @@ from fairseq.trainer import Trainer
 
 try:
     from fairseq.model_parallel.megatron.mpu import (
-        get_data_parallel_rank,
-        get_data_parallel_world_size,
-        get_model_parallel_src_rank,
         get_cuda_rng_tracker,
     )
 

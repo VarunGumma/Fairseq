@@ -54,8 +54,8 @@ class EncDecBaseConfig(FairseqDataclass):
     normalize_before: bool = field(
         default=False, metadata={"help": "apply layernorm before each block"}
     )
-    use_gated_fc: bool = field(
-        default=False, metadata={"help": "use gated fc layers in the encoder/decoder"}
+    use_gated_ffn: bool = field(
+        default=False, metadata={"help": "use gated ffn layers, similar to Llama2"}
     )
     use_rmsnorm: bool = field(
         default=False, metadata={"help": "use RMSNorm instead of LayerNorm"}

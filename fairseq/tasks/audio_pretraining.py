@@ -13,7 +13,7 @@ from argparse import Namespace
 from dataclasses import dataclass, field
 from typing import Optional, OrderedDict
 from fairseq.data.multi_corpus_dataset import MultiCorpusDataset
-from omegaconf import MISSING, II, OmegaConf
+from omegaconf import MISSING, II
 
 from fairseq.data import BinarizedAudioDataset, FileAudioDataset, SubsampleDataset
 from fairseq.dataclass import FairseqDataclass, ChoiceEnum

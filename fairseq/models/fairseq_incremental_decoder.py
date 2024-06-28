@@ -81,7 +81,6 @@ class FairseqIncrementalDecoder(FairseqDecoder):
         previous time step. A typical use case is beam search, where the input
         order changes between time steps based on the selection of beams.
         """
-        pass
 
     def reorder_incremental_state_scripting(
         self,

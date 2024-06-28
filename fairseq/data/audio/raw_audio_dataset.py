@@ -290,7 +290,6 @@ class FileAudioDataset(RawAudioDataset):
             logger.debug(
                 "Could not create a pyarrow array. Please install pyarrow for better performance"
             )
-            pass
 
         self.set_bucket_info(num_buckets)
 

@@ -1,5 +1,5 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from hydra.core.config_store import ConfigStore
 

@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import csv
-import io
 import logging
 import os
 import os.path as op

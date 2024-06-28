@@ -13,7 +13,7 @@ import io
 import wget
 import sys
 
-from subprocess import check_call, check_output
+from subprocess import check_call
 
 # scripts and data locations
 CWD = os.getcwd()
@@ -342,7 +342,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     import sys
-    import json
 
     # TED Talks data directory
     ted_data_path = args.ted_data_path

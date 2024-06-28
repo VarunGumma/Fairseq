@@ -1,6 +1,6 @@
 import argparse
 from tqdm import tqdm
-from multiprocessing import Manager, Pool
+from multiprocessing import Pool
 
 from scipy.io.wavfile import read
 from librosa.util import normalize

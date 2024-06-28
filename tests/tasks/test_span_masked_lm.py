@@ -67,7 +67,6 @@ class TestSpanMaskedLM(unittest.TestCase):
                 max_tokens=65_536,
                 max_positions=4_096,
             ).next_epoch_itr(shuffle=False)
-            num_tokens = len(vocab)
             for batch in iterator:
                 for sample in range(len(batch)):
                     sample_id = batch["id"][sample]

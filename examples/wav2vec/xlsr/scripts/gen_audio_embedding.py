@@ -20,19 +20,14 @@ Usage:
 """
 
 import torch
-from fairseq import checkpoint_utils, distributed_utils, options, utils
-from fairseq.dataclass.utils import convert_namespace_to_omegaconf
-from fairseq.logging import metrics, progress_bar
-from fairseq import checkpoint_utils, data, options, tasks
-from fairseq.data import FileAudioDataset, AddTargetDataset, Dictionary
+from fairseq import checkpoint_utils, options, utils
+from fairseq import checkpoint_utils, options
+from fairseq.data import FileAudioDataset, AddTargetDataset
 from fairseq.tasks.audio_classification import LabelEncoder
-import ipdb
 import copy
-import sys
 from tqdm import tqdm
 import tempfile
 import numpy as np
-import sklearn
 
 
 def subset_manifest(infer_manifest, veri_pair):
@@ -79,7 +74,6 @@ def resample_data(source, padding_mask, n_sample, max_sample_len):
     # source: BxT
     # padding_mask: BxT
     B = source.shape[0]
-    T = source.shape[1]
     sources = []
     padding_masks = []
     seq_len = (~padding_mask).sum(1)

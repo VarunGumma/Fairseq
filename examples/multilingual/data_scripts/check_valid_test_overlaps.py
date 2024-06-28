@@ -6,7 +6,6 @@
 
 import os
 import argparse
-import pandas as pd
 import sys
 
 
@@ -124,7 +123,6 @@ def main():
     directions = args.directions.split(",")
     directions = sorted(set(directions))
 
-    results = []
     # print(f'checking where {args.split} split data are in training')
     # print(f'direction\tcommon_count\tsrc common\ttgt common\tfrom_size\tto_size')
     raw_data = args.folder

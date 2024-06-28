@@ -13,8 +13,13 @@ from fairseq import utils
 from fairseq.models.transformer import TransformerConfig
 from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
+from fairseq.modules import (
+    LayerNorm,
+    MultiheadAttention,
+    NativeMultiheadAttention,
+)
+
 from fairseq.modules.rms_norm import RMSNorm
-from fairseq.modules import LayerNorm, MultiheadAttention, NativeMultiheadAttention
 
 
 class TransformerEncoderLayerBase(nn.Module):
@@ -61,23 +66,23 @@ class TransformerEncoderLayerBase(nn.Module):
         self.fc1 = self.build_fc1(
             self.embed_dim,
             cfg.encoder.ffn_embed_dim,
-            not cfg.encoder.use_gated_fc,
+            not cfg.encoder.use_gated_ffn,
             self.quant_noise,
             self.quant_noise_block_size,
         )
         self.fc2 = self.build_fc2(
             cfg.encoder.ffn_embed_dim,
             self.embed_dim,
-            not cfg.encoder.use_gated_fc,
+            not cfg.encoder.use_gated_ffn,
             self.quant_noise,
             self.quant_noise_block_size,
         )
 
-        if cfg.encoder.use_gated_fc:
+        if cfg.encoder.use_gated_ffn:
             self.gate_fc = self.build_gate_fc(
                 self.embed_dim,
                 cfg.encoder.ffn_embed_dim,
-                not cfg.encoder.use_gated_fc,
+                not cfg.encoder.use_gated_ffn,
                 self.quant_noise,
                 self.quant_noise_block_size,
             )
@@ -165,7 +170,6 @@ class TransformerEncoderLayerBase(nn.Module):
                 cfg.encoder.attention_heads,
                 dropout=cfg.attention_dropout,
                 self_attention=True,
-                is_decoder=False,
                 rope_args=getattr(cfg, "rope_args", None),
             )
         else:
@@ -379,23 +383,23 @@ class TransformerDecoderLayerBase(nn.Module):
         self.fc1 = self.build_fc1(
             self.embed_dim,
             cfg.decoder.ffn_embed_dim,
-            not cfg.decoder.use_gated_fc,
+            not cfg.decoder.use_gated_ffn,
             self.quant_noise,
             self.quant_noise_block_size,
         )
         self.fc2 = self.build_fc2(
             cfg.decoder.ffn_embed_dim,
             self.embed_dim,
-            not cfg.decoder.use_gated_fc,
+            not cfg.decoder.use_gated_ffn,
             self.quant_noise,
             self.quant_noise_block_size,
         )
 
-        if cfg.decoder.use_gated_fc:
+        if cfg.decoder.use_gated_ffn:
             self.gate_fc = self.build_gate_fc(
                 self.embed_dim,
                 cfg.decoder.ffn_embed_dim,
-                not cfg.decoder.use_gated_fc,
+                not cfg.decoder.use_gated_ffn,
                 self.quant_noise,
                 self.quant_noise_block_size,
             )
@@ -433,7 +437,6 @@ class TransformerDecoderLayerBase(nn.Module):
                 cfg.decoder.attention_heads,
                 dropout=cfg.attention_dropout,
                 self_attention=True,
-                is_decoder=True,
                 rope_args=getattr(cfg, "rope_args", None),
             )
         else:
@@ -458,7 +461,6 @@ class TransformerDecoderLayerBase(nn.Module):
                 vdim=cfg.encoder.embed_dim,
                 dropout=cfg.attention_dropout,
                 encoder_decoder_attention=True,
-                is_decoder=True,
             )
         else:
             return MultiheadAttention(

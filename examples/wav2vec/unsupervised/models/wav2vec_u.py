@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import autograd
 
-from fairseq import checkpoint_utils, utils
+from fairseq import utils
 from fairseq.dataclass import FairseqDataclass
 from fairseq.models import BaseFairseqModel, register_model
 from fairseq.modules import (
@@ -568,8 +568,6 @@ class Wav2vec_U(BaseFairseqModel):
         if segment:
             features, padding_mask = self.segmenter.pre_segment(features, padding_mask)
 
-        orig_size = features.size(0) * features.size(1) - padding_mask.sum()
-
         gen_result = self.generator(features, random_label, padding_mask)
 
         orig_dense_x, token_x = gen_result["dense_x"], gen_result["token_x"]
@@ -610,7 +608,6 @@ class Wav2vec_U(BaseFairseqModel):
         if self.smoothing_one_sided:
             fake_smooth = 0
 
-        zero_loss = None
         smoothness_loss = None
         code_pen = None
         mmi_loss = None

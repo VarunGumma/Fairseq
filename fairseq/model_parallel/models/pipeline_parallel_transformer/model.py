@@ -31,7 +31,6 @@ from fairseq.models.transformer import (
     transformer_iwslt_de_en,
     transformer_wmt_en_de_big,
 )
-from fairseq.modules import SinusoidalPositionalEmbedding
 
 
 logger = logging.getLogger(__name__)

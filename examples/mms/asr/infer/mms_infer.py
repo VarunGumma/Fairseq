@@ -8,7 +8,6 @@ import argparse
 import soundfile as sf
 import tempfile
 from pathlib import Path
-import os
 import subprocess
 import sys
 import re

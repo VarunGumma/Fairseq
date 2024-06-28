@@ -11,11 +11,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from omegaconf import II, MISSING
+from omegaconf import MISSING
 
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from fairseq import checkpoint_utils, tasks
 

@@ -550,7 +550,7 @@ def get_activation_fn(activation: str) -> Callable:
     if activation == "relu":
         return F.relu
     elif activation == "relu_squared":
-        return F.relu(x).pow(2)
+        return lambda x: F.relu(x).pow(2)
     elif activation == "gelu":
         return gelu
     elif activation == "gelu_accurate":
@@ -884,7 +884,7 @@ def hotreload_function(name=None):
         * Need to launch train.py locally (cannot submit jobs)
     """
     try:
-        import jurigged
+        pass
     except ImportError as e:
         logger.warning("Please install jurigged: pip install jurigged[develoop]")
         raise e

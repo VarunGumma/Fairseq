@@ -541,11 +541,9 @@ class FairseqTask(object):
 
     def begin_epoch(self, epoch, model):
         """Hook function called before the start of each epoch."""
-        pass
 
     def begin_valid_epoch(self, epoch, model):
         """Hook function called before the start of each validation epoch."""
-        pass
 
     def aggregate_logging_outputs(self, logging_outputs, criterion):
         """[deprecated] Aggregate logging outputs from data parallel training."""

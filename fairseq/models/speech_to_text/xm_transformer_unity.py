@@ -12,7 +12,6 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-from fairseq.models.speech_to_speech.modules.ctc_decoder import CTCDecoder
 from fairseq.models.speech_to_speech.modules.transformer_encoder import (
     TransformerEncoderNoEmb,
 )
@@ -28,7 +27,7 @@ from fairseq.models.speech_to_text.xm_transformer import (
     set_default_transformer_decoder_args,
     set_default_w2v_encoder_args,
 )
-from fairseq.models.transformer import Linear, TransformerDecoder, TransformerModelBase
+from fairseq.models.transformer import Linear, TransformerDecoder
 from fairseq.models.transformer.transformer_decoder_aug import AugTransformerDecoder
 
 logger = logging.getLogger(__name__)

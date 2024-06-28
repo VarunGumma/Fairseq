@@ -1,6 +1,5 @@
 from pathlib import Path
 import os
-import sys
 import subprocess
 import argparse
 from datetime import datetime
@@ -97,7 +96,6 @@ def main():
         f"python preprocess/split_emov_km_tsv_by_uttid.py {args.tsv} {args.emov_km} --destdir {outdir}/translation --seed {args.seed}"
     )
 
-    emov_code_name = os.path.basename(args.emov_km)
     logger.info("generating hifigan split")
     run_cmd(
         f"mkdir -p {outdir}/hifigan &&"

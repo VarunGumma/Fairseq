@@ -8,14 +8,10 @@ from collections import namedtuple
 from pathlib import Path
 
 import torch
-from tqdm import tqdm
 
 import fairseq
 from fairseq import utils
-from fairseq.checkpoint_utils import load_model_ensemble_and_task
-from fairseq.scoring.bleu import SacrebleuScorer
-from fairseq.tasks import import_tasks
-from tests.speech import S3_BASE_URL, TestFairseqSpeech
+from tests.speech import TestFairseqSpeech
 
 
 @unittest.skipIf(not torch.cuda.is_available(), "test requires a GPU")

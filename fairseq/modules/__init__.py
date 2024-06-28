@@ -54,8 +54,6 @@ from .positional_encoding import (
 )
 
 from .rms_norm import RMSNorm
-from .xpos import XPOS
-from .rope import ROPE
 
 __all__ = [
     "AdaptiveInput",
@@ -109,9 +107,6 @@ __all__ = [
     "PositionalEmbedding",
     "RelPositionMultiHeadedAttention",
     "RelPositionalEncoding",
-    "RotaryPositionalEmbedding",
     "RotaryPositionMultiHeadedAttention",
     "RMSNorm",
-    "XPOS",
-    "ROPE",
 ]

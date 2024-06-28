@@ -74,7 +74,6 @@ class Search(nn.Module):
         Returns:
             *encoder_out* rearranged according to *new_order*
         """
-        pass
 
     def prune_sentences(self, batch_idxs: Tensor):
         """
@@ -85,7 +84,6 @@ class Search(nn.Module):
         Args:
             batch_idxs: Indices of *sentences* whose constraint state should be *kept*.
         """
-        pass
 
     def update_constraints(self, active_hypos: Tensor):
         """
@@ -98,7 +96,6 @@ class Search(nn.Module):
               list of integers denoting, for each sentence, which beam candidate items
               should be kept.
         """
-        pass
 
 
 class BeamSearch(Search):

@@ -247,7 +247,6 @@ class TestBaseFairseqModelBase(unittest.TestCase):
     def setUp(self):
         self.model = None
         self.forward_input = None
-        pass
 
 
 class TestFairseqEncoderDecoderModelBase(TestBaseFairseqModelBase):

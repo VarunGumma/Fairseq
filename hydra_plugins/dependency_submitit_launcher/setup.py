@@ -1,6 +1,5 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 # type: ignore
-from pathlib import Path
 
 from read_version import read_version
 from setuptools import find_namespace_packages, setup

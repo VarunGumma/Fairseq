@@ -7,7 +7,6 @@ import glob
 import wget
 import re
 import multiprocessing as mp
-from functools import partial
 import pathlib
 from collections import OrderedDict
 
@@ -471,8 +470,6 @@ def concat_into_splits(dl_dataset, src, tgt, extracted_folders, to_folder, debug
 
 def download_multi(dl_folder, extract_folder, urls, num_processes=8, debug=False):
     pool = mp.Pool(processes=num_processes)
-    download_f = partial(download_a_url, dl_folder)
-    downloaded_files = pool.imap_unordered(download_f, urls)
     pool.close()
     pool.join()
 
