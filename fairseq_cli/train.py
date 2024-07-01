@@ -41,10 +41,9 @@ from fairseq.logging import meters, metrics, progress_bar
 from fairseq.model_parallel.megatron_trainer import MegatronTrainer
 from fairseq.trainer import Trainer
 from fairseq.checkpoint_utils import load_model_ensemble
-from fairseq.modules.lora import LoRALayer, LoRALinear, LoRAEmbedding
+from fairseq.modules.lora import LoRALinear, LoRALayer, LoRAEmbedding
 
 
-# copied from: https://github.com/microsoft/LoRA/blob/main/loralib/utils.py
 def mark_only_lora_as_trainable(model, bias) -> None:
     for n, p in model.named_parameters():
         p.requires_grad = "lora_" in n
@@ -163,8 +162,8 @@ def main(cfg: FairseqConfig) -> None:
     assert cfg.criterion, "Please specify criterion to train a model"
 
     # build teacher model here
-    if (cfg.task._name == "translation_with_kd") and (
-        cfg.criterion._name == "label_smoothed_cross_entropy_with_kd"
+    if (cfg.task._name == "seq2seq_lm_distillation") and (
+        cfg.criterion._name == "seq2seq_lm_distillation"
     ):
         logging.info("Building teacher model")
 

@@ -17,19 +17,15 @@ from fairseq.optim.amp_optimizer import AMPOptimizer
 
 
 @dataclass
-class KDTranslationConfig(TranslationConfig):
+class Seq2SeqLMDistillationTaskConfig(TranslationConfig):
     teacher_checkpoint_path: Optional[str] = field(
         default=None,
         metadata={"help": "teacher checkpoint path when performing distillation"},
     )
-    language_tags: Optional[str] = field(
-        default=None,
-        metadata={"help": "language tags for Global-language-wise distillation"},
-    )
 
 
-@register_task("translation_with_kd", dataclass=KDTranslationConfig)
-class KDTranslationTask(TranslationTask):
+@register_task("seq2seq_lm_distillation", dataclass=Seq2SeqLMDistillationTaskConfig)
+class Seq2SeqLMDistillationTask(TranslationTask):
     """
     Translate from one (source) language to another (target) language.
     Args:
@@ -40,15 +36,10 @@ class KDTranslationTask(TranslationTask):
         :mod:`fairseq-generate` and :mod:`fairseq-interactive`.
     """
 
-    cfg: KDTranslationConfig
+    cfg: Seq2SeqLMDistillationTaskConfig
 
-    def __init__(self, cfg: KDTranslationConfig, src_dict, tgt_dict):
+    def __init__(self, cfg: Seq2SeqLMDistillationTaskConfig, src_dict, tgt_dict):
         super().__init__(cfg, src_dict, tgt_dict)
-        if cfg.language_tags is not None:
-            _rev_src_dict = {i: src_dict[i] for i in range(len(src_dict))}
-            self.lang_ids = [_rev_src_dict[tag] for tag in cfg.language_tags.split(",")]
-        else:
-            self.lang_ids = None
 
     def train_step(
         self,

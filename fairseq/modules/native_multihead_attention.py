@@ -319,15 +319,7 @@ class NativeMultiheadAttention(MultiheadAttention):
         else:
             attn_weights = torch.bmm(q, k.transpose(1, 2))
 
-        attn_weights = self.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
-
-        assert list(attn_weights.size()) == [
-            bsz * self.num_heads,
-            tgt_len,
-            src_len,
-        ], "attn_weights: {} vs [bsz * self.num_heads, tgt_len, src_len]: {}".format(
-            list(attn_weights.size()), [bsz * self.num_heads, tgt_len, src_len]
-        )
+        assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
 
         if attn_mask is not None:
             attn_mask = attn_mask.unsqueeze(0)

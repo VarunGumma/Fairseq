@@ -7,6 +7,7 @@ import math
 from dataclasses import dataclass, field
 
 import torch
+import torch.nn.functional as F
 
 from fairseq import utils
 from fairseq.logging import metrics
@@ -14,7 +15,6 @@ from fairseq.criterions import register_criterion
 from fairseq.criterions.label_smoothed_cross_entropy import (
     LabelSmoothedCrossEntropyCriterion,
     LabelSmoothedCrossEntropyCriterionConfig,
-    label_smoothed_nll_loss,
 )
 
 
@@ -69,6 +69,7 @@ class RdropLabelSmoothedCrossEntropyCriterion(LabelSmoothedCrossEntropyCriterion
             ) == sample["target"].size(0):
                 sample = duplicate_input(sample)
             net_output = model(**sample["net_input"])
+
         loss, nll_loss, rdrop_kl_loss = self.compute_loss(
             model, net_output, sample, reduce=reduce
         )
@@ -103,13 +104,20 @@ class RdropLabelSmoothedCrossEntropyCriterion(LabelSmoothedCrossEntropyCriterion
         return lprobs.view(-1, lprobs.size(-1)), target.view(-1)
 
     def compute_loss(self, model, net_output, sample, reduce=True):
-        lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
-        loss, nll_loss = label_smoothed_nll_loss(
-            lprobs,
+        logits, target = self.get_logits_and_target(model, net_output, sample)
+        loss = F.cross_entropy(
+            logits,
             target,
-            self.eps,
+            reduction="sum" if reduce else "none",
             ignore_index=self.padding_idx,
-            reduce=reduce,
+            label_smoothing=self.eps,
+        )
+
+        nll_loss = F.cross_entropy(
+            logits,
+            target,
+            reduction="sum" if reduce else "none",
+            ignore_index=self.padding_idx,
         )
 
         if self.rdrop_alpha > 0:
@@ -154,7 +162,7 @@ def duplicate_input(sample):
 
 def compute_kl_loss(model, net_output, pad_mask=None, reduce=True):
     net_prob = model.get_normalized_probs(net_output, log_probs=True)
-    net_prob_tec = model.get_normalized_probs(net_output, log_probs=False)
+    net_prob_tec = model.get_normalized_probs(net_output, log_probs=True)
 
     net_prob = net_prob.view(-1, net_prob.size(-1))
     net_prob_tec = net_prob_tec.view(-1, net_prob_tec.size(-1))
@@ -162,8 +170,8 @@ def compute_kl_loss(model, net_output, pad_mask=None, reduce=True):
     p, q = torch.split(net_prob, net_prob.size(0) // 2, dim=0)
     p_tec, q_tec = torch.split(net_prob_tec, net_prob_tec.size(0) // 2, dim=0)
 
-    p_loss = torch.nn.functional.kl_div(p, q_tec, reduction="none")
-    q_loss = torch.nn.functional.kl_div(q, p_tec, reduction="none")
+    p_loss = F.kl_div(p, q_tec, reduction="none", log_target=True)
+    q_loss = F.kl_div(q, p_tec, reduction="none", log_target=True)
 
     if pad_mask is not None:
         p_loss.masked_fill_(pad_mask, 0.0)
