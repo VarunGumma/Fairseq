@@ -119,12 +119,14 @@ class TransformerEncoderBase(FairseqEncoder):
             else None
         )
 
-        if getattr(cfg, "alibi_args", False) and self.embed_positions is None:
-            alibi_args = json.loads(cfg.alibi_args)
+        if cfg.use_alibi is not None:
+            assert (
+                self.embed_positions is None
+            ), "ALiBi shouldn't be used with positional embedding"
             self.alibi = utils.alibi(
                 cfg.encoder.attention_heads,
                 self.max_source_positions,
-                alibi_args.get("alibi_asymmetrical", False),
+                asymmetrical=cfg.use_alibi,
             )
         else:
             self.alibi = None
@@ -247,13 +249,11 @@ class TransformerEncoderBase(FairseqEncoder):
         )
 
         if self.alibi is not None:
-            shape = x.size()
+            B, T, _ = x.size()
             self.alibi = self.alibi.to(x)
-            self_attn_mask = self.alibi[:, : shape[1], : shape[1]].repeat(
-                shape[0], 1, 1
-            )
+            self_attn_mask = self.alibi[:, :T, :T].repeat(B, 1, 1)
         else:
-            pass
+            self_attn_mask = None
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
@@ -267,7 +267,9 @@ class TransformerEncoderBase(FairseqEncoder):
         # encoder layers
         for idx, layer in enumerate(self.layers):
             lr = layer(
-                x, encoder_padding_mask=encoder_padding_mask if has_pads else None
+                x,
+                encoder_padding_mask=encoder_padding_mask if has_pads else None,
+                self_attn_mask=self_attn_mask,
             )
 
             if isinstance(lr, tuple) and len(lr) == 2:

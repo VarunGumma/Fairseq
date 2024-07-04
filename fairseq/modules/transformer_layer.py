@@ -170,7 +170,7 @@ class TransformerEncoderLayerBase(nn.Module):
                 cfg.encoder.attention_heads,
                 dropout=cfg.attention_dropout,
                 self_attention=True,
-                rope_args=getattr(cfg, "rope_args", None),
+                use_rope=getattr(cfg, "use_rope", False)
             )
         else:
             return MultiheadAttention(
@@ -208,6 +208,7 @@ class TransformerEncoderLayerBase(nn.Module):
         x,
         encoder_padding_mask: Optional[Tensor],
         attn_mask: Optional[Tensor] = None,
+        self_attn_mask: Optional[Tensor] = None,
     ):
         """
         Args:
@@ -220,6 +221,8 @@ class TransformerEncoderLayerBase(nn.Module):
                 `attn_mask[tgt_i, src_j] = 1` means that when calculating the
                 embedding for `tgt_i`, we exclude (mask out) `src_j`. This is
                 useful for strided self-attention.
+            self_attn_mask (Tensor): tensor of shape broadcastable to `(
+                batch * attn_heads, tgt_len, src_len)`, as an additional mask.
 
         Returns:
             encoded output of shape `(seq_len, batch, embed_dim)`
@@ -231,8 +234,12 @@ class TransformerEncoderLayerBase(nn.Module):
         # will become -inf, which results in NaN in model parameters
         if attn_mask is not None:
             attn_mask = attn_mask.masked_fill(
-                attn_mask.to(torch.bool), -1e8 if x.dtype == torch.float32 else -1e4
+                attn_mask.to(torch.bool), torch.finfo(x.dtype).min
             )
+            if self_attn_mask is not None:
+                attn_mask += self_attn_mask
+        elif self_attn_mask is not None:
+            attn_mask = self_attn_mask
 
         residual = x
         if self.normalize_before:
@@ -437,7 +444,8 @@ class TransformerDecoderLayerBase(nn.Module):
                 cfg.decoder.attention_heads,
                 dropout=cfg.attention_dropout,
                 self_attention=True,
-                rope_args=getattr(cfg, "rope_args", None),
+                is_decoder=True,
+                use_rope=getattr(cfg, "use_rope", False),
             )
         else:
             return MultiheadAttention(
@@ -461,6 +469,7 @@ class TransformerDecoderLayerBase(nn.Module):
                 vdim=cfg.encoder.embed_dim,
                 dropout=cfg.attention_dropout,
                 encoder_decoder_attention=True,
+                is_decoder=True,
             )
         else:
             return MultiheadAttention(

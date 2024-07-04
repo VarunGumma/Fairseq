@@ -158,17 +158,20 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         else:
             self.project_out_activation_fn = None
 
-        self.adaptive_softmax = None
-        self.output_projection = output_projection
-        if self.output_projection is None:
-            self.build_output_projection(cfg, dictionary, embed_tokens)
-
-        if getattr(cfg, "alibi_args", False) and self.embed_positions is None:
+        if cfg.use_alibi is not None:
+            assert (
+                self.embed_positions is None
+            ), "ALiBi shouldn't be used with positional embedding"
             self.alibi = utils.alibi(
                 cfg.decoder.attention_heads, self.max_target_positions
             )
         else:
             self.alibi = None
+
+        self.adaptive_softmax = None
+        self.output_projection = output_projection
+        if self.output_projection is None:
+            self.build_output_projection(cfg, dictionary, embed_tokens)
 
     def normalization(self, dim, rms=False):
         return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
@@ -363,11 +366,14 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
 
         x = self.dropout_module(x)
 
-        # We move the mask construction here because its slightly more efficient.
-        if incremental_state is None and not full_context_alignment:
-            self_attn_mask = self.buffered_future_mask(x)
-        else:
-            self_attn_mask = None
+        self_attn_mask = (
+            self.buffered_future_mask(x)
+            if incremental_state is None and not full_context_alignment
+            else None
+        )
+
+        if self_attn_mask is None and incremental_state is not None:
+            self_attn_mask = self._bias_attn_mask(x, incremental_state)
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
@@ -428,6 +434,19 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             return self.max_target_positions
         return min(self.max_target_positions, self.embed_positions.max_positions)
 
+    def _bias_attn_mask(self, x, incremental_state):
+        if incremental_state is None:
+            return None
+
+        saved_state = self.layers[0].self_attn._get_input_buffer(incremental_state)
+
+        if saved_state is None or ("prev_key" not in saved_state):
+            return None
+
+        src_len = saved_state["prev_key"].shape[2]
+
+        return self.alibi[:, src_len, : src_len + 1].unsqueeze(1).to(x.device)
+
     def buffered_future_mask(self, tensor):
         B, T, _ = tensor.size()
         # self._future_mask.device != tensor.device is not working in TorchScript. This is a workaround.
@@ -445,10 +464,11 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             if self.alibi is not None:
                 self._future_mask = self._future_mask.unsqueeze(0) + self.alibi
         self._future_mask = self._future_mask.to(tensor)
-        if self.alibi is not None:
-            return self._future_mask[:, :T, :T].repeat(B, 1, 1)
-        else:
-            return self._future_mask[:T, :T]
+        return (
+            self._future_mask[:, :T, :T].repeat(B, 1, 1)
+            if self.alibi is not None
+            else self._future_mask[:T, :T]
+        )
 
     def upgrade_state_dict_named(self, state_dict, name):
         """Upgrade a (possibly old) state dict for new versions of fairseq."""

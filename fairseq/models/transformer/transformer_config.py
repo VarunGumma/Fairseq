@@ -246,21 +246,15 @@ class TransformerConfig(FairseqDataclass):
             "help": "LoRA arguments (rank, alpha, dropout, target_modules, rank_scaled)"
         },
     )
-    rope_args: Optional[str] = field(
-        default=None,
+    use_rope: Optional[bool] = field(
+        default=False,
         metadata={
-            "help": "RoPE arguments (max_position_embeddings, base, type ['vanilla', 'linear', 'dynamic'], scale)"
+            "help": "use RoPE based attention."
         },
     )
-    yarn_args: Optional[str] = field(
+    use_alibi: Optional[str] = field(
         default=None,
-        metadata={
-            "help": "YaRN arguments (max_position_embeddings, base, type ['vanilla', 'dynamic'], scale, original_max_position_embeddings, extrapolation_factor, attn_factor, beta_fast, beta_slow, finetuned)"
-        },
-    )
-    alibi_args: Optional[str] = field(
-        default=None,
-        metadata={"help": "ALiBi arguments (alibi_asymmetrical)"},
+        metadata={"help": "use ALiBi positional encoding (symmetrical/asymmetrical)"},
     )
 
     # args for Training with Quantization Noise for Extreme Model Compression ({Fan*, Stock*} et al., 2020)

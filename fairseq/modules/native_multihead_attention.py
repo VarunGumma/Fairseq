@@ -5,10 +5,11 @@
 
 from typing import Dict, Optional, Tuple
 
-import json
 import torch
 from torch import Tensor, nn
 from torch.nn import Parameter
+
+from rotary_embedding_torch import RotaryEmbedding
 
 from fairseq import utils
 from einops import rearrange
@@ -38,7 +39,8 @@ class NativeMultiheadAttention(MultiheadAttention):
         dictionary=None,
         q_noise=0.0,
         qn_block_size=8,
-        rope_args=None,
+        use_rope=False,
+        is_decoder=False,
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
@@ -47,6 +49,8 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
         self.num_heads = num_heads
+        self.is_decoder = is_decoder
+
         self.dropout_module = FairseqDropout(
             dropout, module_name=self.__class__.__name__
         )
@@ -60,22 +64,22 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.self_attention = self_attention
         self.encoder_decoder_attention = encoder_decoder_attention
 
-        self.rope_args = json.loads(rope_args) if rope_args is not None else None
+        self.rope = use_rope and self.self_attention
 
-        if self.rope_args is not None and self.self_attention:
-            from rotary_embedding_torch import RotaryEmbedding
-
-            self.rotary_pos_embed = RotaryEmbedding(
-                dim=self.head_dim,
+        # partial rotation in RoPE
+        self.rotary_pos_embed = (
+            RotaryEmbedding(
+                theta=10000,
+                dim=(self.head_dim // 2),
                 freqs_for="lang",
                 use_xpos=False,
                 seq_before_head_dim=False,
                 cache_if_possible=True,
-                theta=self.rope_args.get("base", 10000),
-                learned_freq=self.rope_args.get("learned_freq", False),
+                learned_freq=False,
             )
-        else:
-            self.rotary_pos_embed = None
+            if self.rope
+            else None
+        )
 
         assert (
             not self.self_attention or self.qkv_same_dim
@@ -281,17 +285,18 @@ class NativeMultiheadAttention(MultiheadAttention):
         assert k.size(1) == src_len
 
         if self.rotary_pos_embed is not None:
-            q_ = rearrange(q, "(b h) t d -> b h t d", h=self.num_heads)
-            k_ = rearrange(k, "(b h) t d -> b h t d", h=self.num_heads)
+            q = rearrange(q, "(b h) t d -> b h t d", h=self.num_heads)
+            k = rearrange(k, "(b h) t d -> b h t d", h=self.num_heads)
 
-            if incremental_state is not None and not self.is_first_step(saved_state):
-                q_, k_ = self.rotary_pos_embed.rotate_queries_with_cached_keys(q_, k_)
+            if saved_state is not None:
+                # inference with kv caching
+                q, k = self.rotary_pos_embed.rotate_queries_with_cached_keys(q, k)
             else:
-                q_ = self.rotary_pos_embed.rotate_queries_or_keys(q_)
-                k_ = self.rotary_pos_embed.rotate_queries_or_keys(k_)
+                q = self.rotary_pos_embed.rotate_queries_or_keys(q)
+                k = self.rotary_pos_embed.rotate_queries_or_keys(k)
 
-            q = rearrange(q_, "b h t d -> (b h) t d", h=self.num_heads)
-            k = rearrange(k_, "b h t d -> (b h) t d", h=self.num_heads)
+            q = rearrange(q, "b h t d -> (b h) t d", h=self.num_heads)
+            k = rearrange(k, "b h t d -> (b h) t d", h=self.num_heads)
 
         # This is part of a workaround to get around fork/join parallelism
         # not supporting Optional types.
@@ -322,8 +327,14 @@ class NativeMultiheadAttention(MultiheadAttention):
         assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
 
         if attn_mask is not None:
-            attn_mask = attn_mask.unsqueeze(0)
-            attn_weights += attn_mask
+            if saved_state is not None:
+                # HACK: this happens only with ALiBi, when the attn_mask is the attn_bias
+                # in no other inference, this branch should be taken
+                attn_weights = rearrange(attn_weights, "(b h) t s -> b h t s", h=self.num_heads)
+                attn_weights += attn_mask
+                attn_weights = rearrange(attn_weights, "b h t s -> (b h) t s", h=self.num_heads)
+            else:
+                attn_weights += attn_mask
 
         if key_padding_mask is not None:
             # don't attend to padding symbols
