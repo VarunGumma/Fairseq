@@ -372,7 +372,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             else None
         )
 
-        if self_attn_mask is None and incremental_state is not None:
+        if self.alibi is not None and self_attn_mask is None and incremental_state is not None:
             self_attn_mask = self._bias_attn_mask(x, incremental_state)
 
         # B x T x C -> T x B x C
@@ -435,9 +435,6 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         return min(self.max_target_positions, self.embed_positions.max_positions)
 
     def _bias_attn_mask(self, x, incremental_state):
-        if incremental_state is None:
-            return None
-
         saved_state = self.layers[0].self_attn._get_input_buffer(incremental_state)
 
         if saved_state is None or ("prev_key" not in saved_state):
