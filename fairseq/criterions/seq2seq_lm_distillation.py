@@ -48,9 +48,9 @@ class Seq2SeqLMDistillationCriterion(CrossEntropyCriterion):
         kd_args = json.loads(kd_args)
 
         self.strategy = kd_args.get("strategy", "on_policy")
-        self.lambd = kd_args.get("lambda", 1.0)
-        self.beta = kd_args.get("beta", 0.5)
-        self.loss_type = kd_args.get("loss_type", "forward_kld")
+        self.lambd = kd_args.get("lambda", 1.0) # lambda for ratio of KD loss and NLL loss
+        self.beta = kd_args.get("beta", 0.5) # beta for JSD loss
+        self.loss_type = kd_args.get("loss_type", "forward_kld") # possible values: ['forward_kld', 'reverse_kld', 'jsd']
 
         assert self.lambd > 0.0 and self.lambd <= 1.0, "lambda should be in (0, 1]"
         assert self.beta > 0.0 and self.beta < 1.0, "beta should be in (0, 1)"
