@@ -327,14 +327,7 @@ class NativeMultiheadAttention(MultiheadAttention):
         assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
 
         if attn_mask is not None:
-            if saved_state is not None:
-                # HACK: this happens only with ALiBi, when the attn_mask is the attn_bias
-                # in no other inference, this branch should be taken
-                attn_weights = rearrange(attn_weights, "(b h) t s -> b h t s", h=self.num_heads)
-                attn_weights += attn_mask
-                attn_weights = rearrange(attn_weights, "b h t s -> (b h) t s", h=self.num_heads)
-            else:
-                attn_weights += attn_mask
+            attn_weights += attn_mask
 
         if key_padding_mask is not None:
             # don't attend to padding symbols

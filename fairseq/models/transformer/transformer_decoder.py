@@ -28,6 +28,7 @@ from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 
 from fairseq.modules.rms_norm import RMSNorm
+from einops import rearrange
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -372,7 +373,11 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             else None
         )
 
-        if self.alibi is not None and self_attn_mask is None and incremental_state is not None:
+        if (
+            self.alibi is not None
+            and self_attn_mask is None
+            and incremental_state is not None
+        ):
             self_attn_mask = self._bias_attn_mask(x, incremental_state)
 
         # B x T x C -> T x B x C
@@ -442,7 +447,15 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
 
         src_len = saved_state["prev_key"].shape[2]
 
-        return self.alibi[:, src_len, : src_len + 1].unsqueeze(1).to(x.device)
+        attn_mask = (
+            self.alibi[:, src_len, : src_len + 1]
+            .unsqueeze(1)
+            .unsqueeze(0)
+            .expand(x.size(0), -1, -1, -1)
+            .to(x.device)
+        )
+        attn_mask = rearrange(attn_mask, "b h t c -> (b h) t c")
+        return attn_mask
 
     def buffered_future_mask(self, tensor):
         B, T, _ = tensor.size()
