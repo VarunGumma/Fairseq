@@ -111,17 +111,6 @@ class NativeMultiheadAttention(MultiheadAttention):
 
         self.init_incremental_state()
 
-    def is_first_step(self, saved_state):
-        if saved_state is None:
-            return True
-        elif (
-            saved_state["prev_key"] is not None
-            and saved_state["prev_key"].shape[2] == 1
-        ):
-            return True
-        else:
-            return False
-
     def forward(
         self,
         query: Tensor,
