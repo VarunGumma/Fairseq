@@ -17,6 +17,7 @@ from fairseq.modules import (
     LayerNorm,
     MultiheadAttention,
     NativeMultiheadAttention,
+    FastMultiheadAttention,
 )
 
 from fairseq.modules.rms_norm import RMSNorm
@@ -44,7 +45,7 @@ class TransformerEncoderLayerBase(nn.Module):
         self.embed_dim = cfg.encoder.embed_dim
         self.quant_noise = cfg.quant_noise.pq
         self.quant_noise_block_size = cfg.quant_noise.pq_block_size
-        self.use_native_attention = cfg.use_native_attention
+        self.attn_implementation = getattr(cfg, "attn_implementation", None)
         self.self_attn = self.build_self_attention(self.embed_dim, cfg)
         self.self_attn_layer_norm = self.normalization(
             self.embed_dim, rms=cfg.encoder.use_rmsnorm
@@ -164,13 +165,25 @@ class TransformerEncoderLayerBase(nn.Module):
         self.fc2.bias = torch.nn.Parameter(new_fc2_bias)
 
     def build_self_attention(self, embed_dim, cfg):
-        if self.use_native_attention:
-            return NativeMultiheadAttention(
-                embed_dim,
-                cfg.encoder.attention_heads,
-                dropout=cfg.attention_dropout,
-                self_attention=True,
-                use_rope=getattr(cfg, "use_rope", False)
+        if self.attn_implementation is not None:
+            return (
+                NativeMultiheadAttention(
+                    embed_dim,
+                    cfg.encoder.attention_heads,
+                    dropout=cfg.attention_dropout,
+                    self_attention=True,
+                    q_noise=self.quant_noise,
+                    qn_block_size=self.quant_noise_block_size,
+                    use_rope=getattr(cfg, "use_rope", False),
+                )
+                if (self.attn_implementation == "native")
+                else FastMultiheadAttention(
+                    embed_dim,
+                    cfg.encoder.attention_heads,
+                    dropout=cfg.attention_dropout,
+                    self_attention=True,
+                    use_rope=getattr(cfg, "use_rope", False)
+                )
             )
         else:
             return MultiheadAttention(
@@ -326,7 +339,7 @@ class TransformerDecoderLayerBase(nn.Module):
         self.quant_noise_block_size = cfg.quant_noise.pq_block_size
 
         self.cross_self_attention = cfg.cross_self_attention
-        self.use_native_attention = cfg.use_native_attention
+        self.attn_implementation = getattr(cfg, "attn_implementation", "fairseq")
 
         self.self_attn = self.build_self_attention(
             self.embed_dim,
@@ -438,14 +451,27 @@ class TransformerDecoderLayerBase(nn.Module):
     def build_self_attention(
         self, embed_dim, cfg, add_bias_kv=False, add_zero_attn=False
     ):
-        if self.use_native_attention:
-            return NativeMultiheadAttention(
-                embed_dim,
-                cfg.decoder.attention_heads,
-                dropout=cfg.attention_dropout,
-                self_attention=True,
-                is_decoder=True,
-                use_rope=getattr(cfg, "use_rope", False),
+        if self.attn_implementation!= "fairseq":
+            return (
+                NativeMultiheadAttention(
+                    embed_dim,
+                    cfg.decoder.attention_heads,
+                    dropout=cfg.attention_dropout,
+                    add_bias_kv=add_bias_kv,
+                    add_zero_attn=add_zero_attn,
+                    self_attention=True,
+                    q_noise=self.quant_noise,
+                    qn_block_size=self.quant_noise_block_size,
+                    use_rope=getattr(cfg, "use_rope", False),
+                )
+                if (self.attn_implementation == "native")
+                else FastMultiheadAttention(
+                    embed_dim,
+                    cfg.decoder.attention_heads,
+                    dropout=cfg.attention_dropout,
+                    self_attention=True,
+                    use_rope=getattr(cfg, "use_rope", False),
+                )
             )
         else:
             return MultiheadAttention(
@@ -461,15 +487,27 @@ class TransformerDecoderLayerBase(nn.Module):
             )
 
     def build_encoder_attention(self, embed_dim, cfg):
-        if self.use_native_attention:
-            return NativeMultiheadAttention(
-                embed_dim,
-                cfg.decoder.attention_heads,
-                kdim=cfg.encoder.embed_dim,
-                vdim=cfg.encoder.embed_dim,
-                dropout=cfg.attention_dropout,
-                encoder_decoder_attention=True,
-                is_decoder=True,
+        if self.attn_implementation != "fairseq":
+            return (
+                NativeMultiheadAttention(
+                    embed_dim,
+                    cfg.decoder.attention_heads,
+                    kdim=cfg.encoder.embed_dim,
+                    vdim=cfg.encoder.embed_dim,
+                    dropout=cfg.attention_dropout,
+                    encoder_decoder_attention=True,
+                    q_noise=self.quant_noise,
+                    qn_block_size=self.quant_noise_block_size,
+                )
+                if (self.attn_implementation == "native")
+                else FastMultiheadAttention(
+                    embed_dim,
+                    cfg.decoder.attention_heads,
+                    kdim=cfg.encoder.embed_dim,
+                    vdim=cfg.encoder.embed_dim,
+                    dropout=cfg.attention_dropout,
+                    encoder_decoder_attention=True,
+                )
             )
         else:
             return MultiheadAttention(

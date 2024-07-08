@@ -200,7 +200,7 @@ def do_setup(package_data):
             "setuptools>=18.0",
         ],
         install_requires=[
-            "cffi", 
+            "cffi",
             "cython",
             "omegaconf",
             'dataclasses; python_version<"3.7"',
@@ -214,7 +214,7 @@ def do_setup(package_data):
             "torchaudio>=0.8.0",
             "scikit-learn",
             "packaging",
-            "rotary-embedding-torch>=0.6.4"
+            "rotary-embedding-torch>=0.6.4",
         ],
         dependency_links=dependency_links,
         packages=find_packages(

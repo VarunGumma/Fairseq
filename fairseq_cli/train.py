@@ -16,6 +16,8 @@ import json
 from omegaconf import OmegaConf
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+torch.backends.cuda.matmul.allow_tf32 = True
+
 # We need to setup root logger before importing any fairseq libraries.
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",

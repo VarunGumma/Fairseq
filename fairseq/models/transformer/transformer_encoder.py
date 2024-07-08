@@ -5,7 +5,6 @@
 import math
 from typing import Dict, List, Optional
 
-import json
 import torch
 import torch.nn as nn
 from torch import Tensor

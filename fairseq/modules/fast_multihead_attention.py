@@ -7,18 +7,18 @@ from typing import Dict, Optional, Tuple
 
 import torch
 from torch import Tensor, nn
-from torch.nn import Parameter
-
+import torch.nn.functional as F
 from rotary_embedding_torch import RotaryEmbedding
 
-from fairseq import utils
 from einops import rearrange
-from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
 from fairseq.modules.multihead_attention import MultiheadAttention
 
+# HACK: This attention variant is mainly for speedup, and the attenion weights are internalized and None is returned for them.
+# Arguments like `add_bias_kv` and `add_zero_attn` are not used in this implementation. So, double check your requirements before using this variant.
 
-class NativeMultiheadAttention(MultiheadAttention):
+
+class FastMultiheadAttention(MultiheadAttention):
     """Native Multi-headed attention
     Removes a lot of the overhead in the MultiheadAttention module
     See "Attention Is All You Need" for more details.
@@ -43,21 +43,18 @@ class NativeMultiheadAttention(MultiheadAttention):
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
+        self.num_heads = num_heads
+
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
-        self.num_heads = num_heads
-
-        self.dropout_module = FairseqDropout(
-            dropout, module_name=self.__class__.__name__
-        )
+        self.dropout_p = dropout
 
         self.head_dim = embed_dim // num_heads
         assert (
             self.head_dim * num_heads == self.embed_dim
         ), "embed_dim must be divisible by num_heads"
-        self.scaling = self.head_dim**-0.5
 
         self.self_attention = self_attention
         self.encoder_decoder_attention = encoder_decoder_attention
@@ -97,13 +94,6 @@ class NativeMultiheadAttention(MultiheadAttention):
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
         )
 
-        if add_bias_kv:
-            self.bias_k = Parameter(torch.Tensor(1, 1, embed_dim))
-            self.bias_v = Parameter(torch.Tensor(1, 1, embed_dim))
-        else:
-            self.bias_k = self.bias_v = None
-
-        self.add_zero_attn = add_zero_attn
         self.beam_size = 1
         self.reset_parameters()
 
@@ -114,12 +104,11 @@ class NativeMultiheadAttention(MultiheadAttention):
         query: Tensor,
         key: Optional[Tensor],
         value: Optional[Tensor],
+        need_weights: bool = False,
+        static_kv: bool = False,
         key_padding_mask: Optional[Tensor] = None,
         incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-        need_weights: bool = True,
-        static_kv: bool = False,
         attn_mask: Optional[Tensor] = None,
-        before_softmax: bool = False,
         need_head_weights: bool = False,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
@@ -139,11 +128,6 @@ class NativeMultiheadAttention(MultiheadAttention):
                 weights for each head. Implies *need_weights*. Default:
                 return the average attention weights over all heads.
         """
-
-        if need_head_weights:
-            need_weights = True
-
-        is_tpu = query.device.type == "xla"
 
         tgt_len, bsz, embed_dim = query.size()
         src_len = tgt_len
@@ -195,13 +179,7 @@ class NativeMultiheadAttention(MultiheadAttention):
             k = self.k_proj(key)
             v = self.v_proj(value)
 
-        q *= self.scaling
-
-        if self.bias_k is not None:
-            assert self.bias_v is not None
-            k, v, attn_mask, key_padding_mask = self._add_bias(
-                k, v, attn_mask, key_padding_mask, bsz
-            )
+        # q *= self.scaling
 
         q = (
             q.contiguous()
@@ -252,7 +230,7 @@ class NativeMultiheadAttention(MultiheadAttention):
             if "prev_key_padding_mask" in saved_state:
                 prev_key_padding_mask = saved_state["prev_key_padding_mask"]
             assert k is not None and v is not None
-            key_padding_mask = NativeMultiheadAttention._append_prev_key_padding_mask(
+            key_padding_mask = FastMultiheadAttention._append_prev_key_padding_mask(
                 key_padding_mask=key_padding_mask,
                 prev_key_padding_mask=prev_key_padding_mask,
                 batch_size=kv_bsz,
@@ -295,90 +273,48 @@ class NativeMultiheadAttention(MultiheadAttention):
             assert key_padding_mask.size(0) == kv_bsz
             assert key_padding_mask.size(1) == src_len
 
-        if self.add_zero_attn:
-            assert v is not None
-            src_len += 1
-            k, v, key_padding_mask, attn_mask = self._append_zero_attn(
-                k=k, v=v, key_padding_mask=key_padding_mask, attn_mask=attn_mask
+            key_padding_mask = (
+                key_padding_mask.unsqueeze(1)
+                .unsqueeze(2)
+                .expand(-1, self.num_heads, tgt_len, -1)
+                .reshape(bsz * self.num_heads, tgt_len, src_len)
+                .to(torch.bool)
+                .float()
+                * torch.finfo(q.dtype).min
             )
 
-        if self.encoder_decoder_attention and bsz != kv_bsz:
-            attn_weights = torch.einsum(
-                "bxhtd,bhsd->bxhts",
-                q.view((kv_bsz, -1, self.num_heads) + q.size()[1:]),
-                k.view((kv_bsz, self.num_heads) + k.size()[1:]),
+            combined_mask = (
+                (attn_mask.unsqueeze(0) + key_padding_mask)
+                if attn_mask is not None
+                else key_padding_mask
             )
-            attn_weights = attn_weights.reshape((-1,) + attn_weights.size()[-2:])
         else:
-            attn_weights = torch.bmm(q, k.transpose(1, 2))
+            combined_mask = attn_mask
 
-        assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
+        combined_mask = combined_mask.to(q.dtype) if combined_mask is not None else None
 
-        if attn_mask is not None:
-            attn_weights += attn_mask
-
-        if key_padding_mask is not None:
-            # don't attend to padding symbols
-            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
-            if not is_tpu:
-                attn_weights = attn_weights.view(
-                    kv_bsz, -1, self.num_heads, tgt_len, src_len
-                )
-                attn_weights = attn_weights.masked_fill(
-                    key_padding_mask.unsqueeze(1)
-                    .unsqueeze(2)
-                    .unsqueeze(3)
-                    .to(torch.bool),
-                    float("-inf"),
-                )
-            else:
-                attn_weights = attn_weights.transpose(0, 2)
-                attn_weights = attn_weights.masked_fill(key_padding_mask, float("-inf"))
-                attn_weights = attn_weights.transpose(0, 2)
-            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
-
-        if before_softmax:
-            return attn_weights, v
-
-        attn_weights_float = utils.softmax(attn_weights, dim=-1, onnx_trace=False)
-        attn_weights = attn_weights_float.type_as(attn_weights)
-        attn_probs = self.dropout_module(attn_weights)
-
-        assert v is not None
-        attn: Optional[Tensor] = None
-        if self.encoder_decoder_attention and bsz != kv_bsz:
-            attn = torch.einsum(
-                "bxhts,bhsd->bxhtd",
-                attn_probs.view(
-                    (
-                        kv_bsz,
-                        -1,
-                        self.num_heads,
-                    )
-                    + attn_probs.size()[1:]
-                ),
-                v.view(
-                    (
-                        kv_bsz,
-                        self.num_heads,
-                    )
-                    + v.size()[1:]
-                ),
+        with torch.backends.cuda.sdp_kernel(
+            enable_flash=True,
+            enable_math=True,
+            enable_cudnn=True,
+            enable_mem_efficient=True,
+        ):
+            attn = F.scaled_dot_product_attention(
+                query=q,
+                key=k,
+                value=v,
+                attn_mask=combined_mask,
+                dropout_p=self.dropout_p,
+                is_causal=False,
             )
-            attn = attn.reshape((-1,) + attn.size()[-2:])
-        else:
-            attn = torch.bmm(attn_probs, v)
-        assert list(attn.size()) == [bsz * self.num_heads, tgt_len, self.head_dim]
+
+        assert list(attn.size()) == [
+            bsz * self.num_heads,
+            tgt_len,
+            self.head_dim,
+        ], f"attn size should be {[bsz * self.num_heads, tgt_len, self.head_dim]}, but is {attn.shape()}"
 
         attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, self.embed_dim)
         attn = self.out_proj(attn)
-        attn_weights: Optional[Tensor] = None
-        if need_weights:
-            attn_weights = attn_weights_float.view(
-                bsz, self.num_heads, tgt_len, src_len
-            ).transpose(1, 0)
-            if not need_head_weights:
-                # average attention weights over heads
-                attn_weights = attn_weights.mean(dim=0)
 
-        return attn, attn_weights
+        return attn, None

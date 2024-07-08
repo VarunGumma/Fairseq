@@ -233,13 +233,12 @@ class TransformerConfig(FairseqDataclass):
     cross_self_attention: bool = field(
         default=False, metadata={"help": "perform cross+self-attention"}
     )
-    use_native_attention: Optional[bool] = field(
-        default=False,
+    attn_implementation: ChoiceEnum(["native", "fast", "fairseq"]) = field(
+        default="fairseq",
         metadata={
-            "help": "use native attention implementation without much checks. Mainly added for RoPE and LoRA implementation"
+            "help": "Mainly added for RoPE/LoRA/FlashAttention/SDPA. Choices: [native, fast]."
         },
     )
-
     lora_args: Optional[str] = field(
         default=None,
         metadata={
@@ -248,9 +247,7 @@ class TransformerConfig(FairseqDataclass):
     )
     use_rope: Optional[bool] = field(
         default=False,
-        metadata={
-            "help": "use RoPE based attention."
-        },
+        metadata={"help": "use RoPE based attention."},
     )
     use_alibi: Optional[str] = field(
         default=None,
