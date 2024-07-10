@@ -1108,6 +1108,12 @@ class InteractiveConfig(FairseqDataclass):
         default="-",
         metadata={"help": "file to read from; use - for stdin"},
     )
+    torch_compile: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "compile PyTorch model for faster execution",
+        },
+    )
     force_override_max_positions: Optional[str] = field(
         default=None,
         metadata={

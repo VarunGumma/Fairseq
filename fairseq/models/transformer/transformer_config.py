@@ -45,7 +45,7 @@ class EncDecBaseConfig(FairseqDataclass):
         },
     )
     ffn_embed_dim: int = field(
-        default=2048, metadata={"help": "embedding dimension for FFN"}
+        default=2048, metadata={"help": "embedding dimension for FFN, also works for GLU"}
     )
     layers: int = field(default=6, metadata={"help": "number of layers"})
     attention_heads: int = field(
@@ -54,8 +54,11 @@ class EncDecBaseConfig(FairseqDataclass):
     normalize_before: bool = field(
         default=False, metadata={"help": "apply layernorm before each block"}
     )
-    use_gated_ffn: bool = field(
-        default=False, metadata={"help": "use gated ffn layers, similar to Llama2"}
+    use_glu: bool = field(
+        default=False,
+        metadata={
+            "help": "use a GLU module instead of FFN in the transformer layers, similar to Llama2. It uses the ffn_embed_dim as the intermediate dimension"
+        },
     )
     use_rmsnorm: bool = field(
         default=False, metadata={"help": "use RMSNorm instead of LayerNorm"}
@@ -144,7 +147,6 @@ class TransformerConfig(FairseqDataclass):
         default=0.0,
         metadata={
             "help": "dropout probability after activation in FFN.",
-            "alias": "--relu-dropout",
         },
     )
     adaptive_input: bool = False
@@ -235,9 +237,7 @@ class TransformerConfig(FairseqDataclass):
     )
     attn_implementation: ChoiceEnum(["native", "fast", "fairseq"]) = field(
         default="fairseq",
-        metadata={
-            "help": "Mainly added for RoPE/LoRA/FlashAttention/SDPA. Choices: [native, fast]."
-        },
+        metadata={"help": "Mainly added for RoPE/LoRA and efficiency"},
     )
     lora_args: Optional[str] = field(
         default=None,
@@ -247,7 +247,7 @@ class TransformerConfig(FairseqDataclass):
     )
     use_rope: Optional[bool] = field(
         default=False,
-        metadata={"help": "use RoPE based attention."},
+        metadata={"help": "use Rotary Positional Embedding (RoPE) in self-attention layers"},
     )
     use_alibi: Optional[str] = field(
         default=None,
@@ -271,7 +271,6 @@ class TransformerConfig(FairseqDataclass):
     char_inputs: bool = field(
         default=False, metadata={"help": "if set, model takes character ids as input"}
     )
-    relu_dropout: float = 0.0
     # config for "BASE Layers: Simplifying Training of Large, Sparse Models"
     base_layers: Optional[int] = field(
         default=0, metadata={"help": "number of BASE layers in total"}

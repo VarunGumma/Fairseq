@@ -143,7 +143,7 @@ def main(cfg: FairseqConfig):
     # Load ensemble
     overrides = ast.literal_eval(cfg.common_eval.model_overrides)
     logger.info("loading model(s) from {}".format(cfg.common_eval.path))
-    models, _model_args = checkpoint_utils.load_model_ensemble(
+    models, _ = checkpoint_utils.load_model_ensemble(
         utils.split_paths(cfg.common_eval.path),
         arg_overrides=overrides,
         task=task,
@@ -157,6 +157,8 @@ def main(cfg: FairseqConfig):
     src_dict = task.source_dictionary
     tgt_dict = task.target_dictionary
 
+    compile_mode = getattr(cfg, "torch_compile", None)
+
     # Optimize ensemble for generation
     for model in models:
         if model is None:
@@ -166,6 +168,9 @@ def main(cfg: FairseqConfig):
         if use_cuda and not cfg.distributed_training.pipeline_model_parallel:
             model.cuda()
         model.prepare_for_inference_(cfg)
+
+        if compile_mode is not None:
+            model = torch.compile(model, model=compile_mode)
 
         model.eval()
 
@@ -274,7 +279,7 @@ def main(cfg: FairseqConfig):
 
             # Process top predictions
             for hypo in hypos[: min(len(hypos), cfg.generation.nbest)]:
-                hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
+                _, hypo_str, alignment = utils.post_process_prediction(
                     hypo_tokens=hypo["tokens"].int().cpu(),
                     src_str=src_str,
                     alignment=hypo["alignment"],

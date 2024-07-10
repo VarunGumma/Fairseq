@@ -5,23 +5,26 @@
 
 from typing import Dict, Optional, Tuple
 
-import torch
-from torch import Tensor, nn
-import torch.nn.functional as F
 from rotary_embedding_torch import RotaryEmbedding
 
+import torch
+import torch.nn as nn
+from torch import Tensor
 from einops import rearrange
 from fairseq.modules.quant_noise import quant_noise
+from torch.nn.functional import scaled_dot_product_attention
+
 from fairseq.modules.multihead_attention import MultiheadAttention
 
-# HACK: This attention variant is mainly for speedup, and the attenion weights are internalized and None is returned for them.
-# Arguments like `add_bias_kv` and `add_zero_attn` are not used in this implementation. So, double check your requirements before using this variant.
+# HACK: This attention variant is mainly for speedup.
+# HACK: Attenion weights are internalized and None is returned for them.
+# HACK: Double check your requirements before using this variant.
+# BUG: FlashAttention does not work with an attn_mask.
 
 
 class FastMultiheadAttention(MultiheadAttention):
-    """Native Multi-headed attention
-    Removes a lot of the overhead in the MultiheadAttention module
-    See "Attention Is All You Need" for more details.
+    """Fast Multi-headed attention
+    A Faster version of NativeMultiheadAttention that uses a kernelized implementation of scaled dot product attention.
     """
 
     def __init__(
@@ -40,15 +43,16 @@ class FastMultiheadAttention(MultiheadAttention):
         q_noise=0.0,
         qn_block_size=8,
         use_rope=False,
+        is_decoder=False,
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
-        self.num_heads = num_heads
-
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
+        self.is_decoder = is_decoder
+        self.num_heads = num_heads
         self.dropout_p = dropout
 
         self.head_dim = embed_dim // num_heads
@@ -65,7 +69,9 @@ class FastMultiheadAttention(MultiheadAttention):
         self.rotary_pos_embed = (
             RotaryEmbedding(
                 theta=10000,
-                dim=(self.head_dim // 2),
+                dim=(
+                    self.head_dim // 2
+                ),  # partial rotation works better than full rotation
                 freqs_for="lang",
                 use_xpos=False,
                 seq_before_head_dim=False,
@@ -94,6 +100,13 @@ class FastMultiheadAttention(MultiheadAttention):
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
         )
 
+        if add_bias_kv:
+            self.bias_k = Parameter(torch.Tensor(1, 1, embed_dim))
+            self.bias_v = Parameter(torch.Tensor(1, 1, embed_dim))
+        else:
+            self.bias_k = self.bias_v = None
+
+        self.add_zero_attn = add_zero_attn
         self.beam_size = 1
         self.reset_parameters()
 
@@ -179,7 +192,15 @@ class FastMultiheadAttention(MultiheadAttention):
             k = self.k_proj(key)
             v = self.v_proj(value)
 
-        # q *= self.scaling
+        if self.bias_k is not None:
+            assert self.bias_v is not None
+            k, v, attn_mask, key_padding_mask = self._add_bias(
+                k=k,
+                v=v,
+                attn_mask=attn_mask,
+                key_padding_mask=key_padding_mask,
+                bsz=bsz,
+            )
 
         q = (
             q.contiguous()
@@ -273,6 +294,15 @@ class FastMultiheadAttention(MultiheadAttention):
             assert key_padding_mask.size(0) == kv_bsz
             assert key_padding_mask.size(1) == src_len
 
+        if self.add_zero_attn:
+            assert v is not None
+            src_len += 1
+            k, v, key_padding_mask, attn_mask = self._append_zero_attn(
+                k=k, v=v, key_padding_mask=key_padding_mask, attn_mask=attn_mask
+            )
+
+        # create one single mask for causality and padding
+        if key_padding_mask is not None:
             key_padding_mask = (
                 key_padding_mask.unsqueeze(1)
                 .unsqueeze(2)
@@ -283,29 +313,34 @@ class FastMultiheadAttention(MultiheadAttention):
                 * torch.finfo(q.dtype).min
             )
 
-            combined_mask = (
-                (attn_mask.unsqueeze(0) + key_padding_mask)
-                if attn_mask is not None
-                else key_padding_mask
-            )
+            if attn_mask is not None:
+                if attn_mask.size() != key_padding_mask.size():
+                    combined_mask = attn_mask.unsqueeze(0) + key_padding_mask
+                else:
+                    combined_mask = attn_mask + key_padding_mask
+            else:
+                combined_mask = key_padding_mask
+
         else:
             combined_mask = attn_mask
 
         combined_mask = combined_mask.to(q.dtype) if combined_mask is not None else None
 
+        # this the part that is different from NativeMultiheadAttention
+        # it uses a kernelized implementation of SDPA
+        # and the attn_weights are internalized
         with torch.backends.cuda.sdp_kernel(
             enable_flash=True,
             enable_math=True,
-            enable_cudnn=True,
             enable_mem_efficient=True,
         ):
-            attn = F.scaled_dot_product_attention(
+            attn = scaled_dot_product_attention(
                 query=q,
                 key=k,
                 value=v,
+                is_causal=False,
                 attn_mask=combined_mask,
                 dropout_p=self.dropout_p,
-                is_causal=False,
             )
 
         assert list(attn.size()) == [

@@ -63,7 +63,9 @@ def mark_only_lora_as_trainable(model, bias) -> None:
         raise NotImplementedError
 
 
-def replace_with_lora(model, lora_modules, lora_params) -> None:
+def replace_with_lora(
+    model, lora_modules, lora_params, parent_module_name=None
+) -> None:
     """
     Replace all nn.Linear layers in the model with fairseq.modules.lora.Linear layers.
 
@@ -73,7 +75,13 @@ def replace_with_lora(model, lora_modules, lora_params) -> None:
     - lora_params: A dictionary containing parameters for the fairseq.modules.lora.Linear layer.
     """
     for name, module in model.named_children():
-        if name in lora_modules and isinstance(module, torch.nn.Linear):
+        full_module_name = (
+            f"{parent_module_name}.{name}" if (parent_module_name is not None) else name
+        )
+
+        if isinstance(module, torch.nn.Linear) and any(
+            [m in full_module_name for m in lora_modules]
+        ):
 
             new_module = LoRALinear(
                 module.in_features, module.out_features, **lora_params
@@ -87,7 +95,9 @@ def replace_with_lora(model, lora_modules, lora_params) -> None:
 
             setattr(model, name, new_module)
 
-        elif name in lora_modules and isinstance(module, torch.nn.Embedding):
+        elif isinstance(module, torch.nn.Embedding) and any(
+            [m in full_module_name for m in lora_modules]
+        ):
             lora_params_emb = lora_params.copy()
             lora_params_emb.pop("dropout", None)
 
@@ -109,7 +119,9 @@ def replace_with_lora(model, lora_modules, lora_params) -> None:
             setattr(model, name, new_module)
 
         else:
-            replace_with_lora(module, lora_modules, lora_params)
+            replace_with_lora(
+                module, lora_modules, lora_params, parent_module_name=full_module_name
+            )
 
 
 def main(cfg: FairseqConfig) -> None:

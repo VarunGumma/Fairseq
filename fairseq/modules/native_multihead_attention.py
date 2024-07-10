@@ -40,6 +40,7 @@ class NativeMultiheadAttention(MultiheadAttention):
         q_noise=0.0,
         qn_block_size=8,
         use_rope=False,
+        is_decoder=False,
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
@@ -47,7 +48,9 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.vdim = vdim if vdim is not None else embed_dim
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
+        self.is_decoder = is_decoder
         self.num_heads = num_heads
+        self.dropout_p = dropout
 
         self.dropout_module = FairseqDropout(
             dropout, module_name=self.__class__.__name__
@@ -68,7 +71,9 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.rotary_pos_embed = (
             RotaryEmbedding(
                 theta=10000,
-                dim=(self.head_dim // 2),
+                dim=(
+                    self.head_dim // 2
+                ),  # partial rotation works better than full rotation
                 freqs_for="lang",
                 use_xpos=False,
                 seq_before_head_dim=False,
@@ -200,7 +205,11 @@ class NativeMultiheadAttention(MultiheadAttention):
         if self.bias_k is not None:
             assert self.bias_v is not None
             k, v, attn_mask, key_padding_mask = self._add_bias(
-                k, v, attn_mask, key_padding_mask, bsz
+                k=k,
+                v=v,
+                attn_mask=attn_mask,
+                key_padding_mask=key_padding_mask,
+                bsz=bsz,
             )
 
         q = (

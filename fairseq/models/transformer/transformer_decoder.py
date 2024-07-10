@@ -20,14 +20,13 @@ from fairseq.modules import (
     FairseqDropout,
     LayerDropModuleList,
     LayerNorm,
+    RMSNorm,
     PositionalEmbedding,
     transformer_layer,
 )
 
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
-
-from fairseq.modules.rms_norm import RMSNorm
 from einops import rearrange
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -175,7 +174,11 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             self.build_output_projection(cfg, dictionary, embed_tokens)
 
     def normalization(self, dim, rms=False):
-        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
+        return (
+            LayerNorm(dim, export=self.cfg.export)
+            if not rms
+            else RMSNorm(dim, export=self.cfg.export)
+        )
 
     def build_output_projection(self, cfg, dictionary, embed_tokens):
         if cfg.adaptive_softmax_cutoff is not None:
@@ -400,7 +403,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
                 self_attn_mask=self_attn_mask,
                 self_attn_padding_mask=self_attn_padding_mask,
                 need_attn=bool((idx == alignment_layer)),
-                need_head_weights=bool((idx == alignment_layer))
+                need_head_weights=bool((idx == alignment_layer)),
             )
 
             inner_states.append(x)

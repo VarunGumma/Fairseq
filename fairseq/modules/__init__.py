@@ -31,10 +31,12 @@ from .lightweight_convolution import LightweightConv, LightweightConv1dTBC
 from .linearized_convolution import LinearizedConvolution
 from .location_attention import LocationAttention
 from .lstm_cell_with_zoneout import LSTMCellWithZoneOut
+from .mlp import MLP, GLU
 from .multihead_attention import MultiheadAttention
 from .native_multihead_attention import NativeMultiheadAttention
 from .fast_multihead_attention import FastMultiheadAttention
 from .positional_embedding import PositionalEmbedding
+from .rms_norm import RMSNorm
 from .same_pad import SamePad, SamePad2d
 from .scalar_bias import ScalarBias
 from .sinusoidal_positional_embedding import SinusoidalPositionalEmbedding
@@ -53,8 +55,6 @@ from .rotary_positional_embedding import RotaryPositionalEmbedding
 from .positional_encoding import (
     RelPositionalEncoding,
 )
-
-from .rms_norm import RMSNorm
 
 __all__ = [
     "AdaptiveInput",
@@ -111,4 +111,6 @@ __all__ = [
     "RelPositionalEncoding",
     "RotaryPositionMultiHeadedAttention",
     "RMSNorm",
+    "GLU",
+    "MLP"
 ]

@@ -29,8 +29,16 @@ def LayerNorm(normalized_shape, eps=1e-5, elementwise_affine=True, export=False)
     if torch.jit.is_scripting() or torch.jit.is_tracing():
         export = True
     if not export and torch.cuda.is_available() and has_fused_layernorm:
-        return FusedLayerNorm(normalized_shape, eps, elementwise_affine)
-    return torch.nn.LayerNorm(normalized_shape, eps, elementwise_affine)
+        return FusedLayerNorm(
+            normalized_shape=normalized_shape,
+            eps=eps,
+            elementwise_affine=elementwise_affine,
+        )
+    return nn.LayerNorm(
+        normalized_shape=normalized_shape,
+        eps=eps,
+        elementwise_affine=elementwise_affine,
+    )
 
 
 class Fp32LayerNorm(nn.LayerNorm):

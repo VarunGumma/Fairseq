@@ -15,12 +15,14 @@ from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
 from fairseq.modules import (
     LayerNorm,
+    RMSNorm,
+    GLU,
     MultiheadAttention,
     NativeMultiheadAttention,
     FastMultiheadAttention,
 )
 
-from fairseq.modules.rms_norm import RMSNorm
+# This module does not support `scale_attn`, `scale_heads`, `scale_fc`, `scale_resids` anymore
 
 
 class TransformerEncoderLayerBase(nn.Module):
@@ -54,60 +56,43 @@ class TransformerEncoderLayerBase(nn.Module):
         self.dropout_module = FairseqDropout(
             cfg.dropout, module_name=self.__class__.__name__
         )
-        activation_dropout_p = cfg.activation_dropout
-        if activation_dropout_p == 0:
-            # for backwards compatibility with models that use cfg.relu_dropout
-            activation_dropout_p = cfg.relu_dropout or 0
         self.activation_dropout_module = FairseqDropout(
-            float(activation_dropout_p), module_name=self.__class__.__name__
+            float(cfg.activation_dropout), module_name=self.__class__.__name__
         )
         self.normalize_before = cfg.encoder.normalize_before
+        self.use_glu = getattr(cfg.encoder, "use_glu", False)
 
-        self.activation_fn = utils.get_activation_fn(activation=cfg.activation_fn)
-        self.fc1 = self.build_fc1(
-            self.embed_dim,
-            cfg.encoder.ffn_embed_dim,
-            not cfg.encoder.use_gated_ffn,
-            self.quant_noise,
-            self.quant_noise_block_size,
-        )
-        self.fc2 = self.build_fc2(
-            cfg.encoder.ffn_embed_dim,
-            self.embed_dim,
-            not cfg.encoder.use_gated_ffn,
-            self.quant_noise,
-            self.quant_noise_block_size,
-        )
-
-        if cfg.encoder.use_gated_ffn:
-            self.gate_fc = self.build_gate_fc(
+        if not self.use_glu:
+            self.activation_fn = utils.get_activation_fn(activation=cfg.activation_fn)
+            self.fc1 = self.build_fc1(
                 self.embed_dim,
                 cfg.encoder.ffn_embed_dim,
-                not cfg.encoder.use_gated_ffn,
+                self.quant_noise,
+                self.quant_noise_block_size,
+            )
+            self.fc2 = self.build_fc2(
+                cfg.encoder.ffn_embed_dim,
+                self.embed_dim,
                 self.quant_noise,
                 self.quant_noise_block_size,
             )
         else:
-            self.gate_fc = None
+            self.glu = self.build_glu(
+                self.embed_dim, cfg.encoder.ffn_embed_dim, cfg.activation_fn
+            )
 
         self.final_layer_norm = self.normalization(
             self.embed_dim, rms=cfg.encoder.use_rmsnorm
         )
 
-    def build_fc1(self, input_dim, output_dim, bias, q_noise, qn_block_size):
-        return quant_noise(
-            nn.Linear(input_dim, output_dim, bias=bias), q_noise, qn_block_size
-        )
+    def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
+        return quant_noise(nn.Linear(input_dim, output_dim), q_noise, qn_block_size)
 
-    def build_fc2(self, input_dim, output_dim, bias, q_noise, qn_block_size):
-        return quant_noise(
-            nn.Linear(input_dim, output_dim, bias=bias), q_noise, qn_block_size
-        )
+    def build_fc2(self, input_dim, output_dim, q_noise, qn_block_size):
+        return quant_noise(nn.Linear(input_dim, output_dim), q_noise, qn_block_size)
 
-    def build_gate_fc(self, input_dim, output_dim, bias, q_noise, qn_block_size):
-        return quant_noise(
-            nn.Linear(input_dim, output_dim, bias=bias), q_noise, qn_block_size
-        )
+    def build_glu(self, input_dim, intermediate_dim, activation_fn="silu", bias=False):
+        return GLU(input_dim, intermediate_dim, activation_fn=activation_fn, bias=bias)
 
     def _get_fc_rank(self, remove_num: int) -> List[int]:
         f1_filter_param = []
@@ -165,27 +150,7 @@ class TransformerEncoderLayerBase(nn.Module):
         self.fc2.bias = torch.nn.Parameter(new_fc2_bias)
 
     def build_self_attention(self, embed_dim, cfg):
-        if self.attn_implementation is not None:
-            return (
-                NativeMultiheadAttention(
-                    embed_dim,
-                    cfg.encoder.attention_heads,
-                    dropout=cfg.attention_dropout,
-                    self_attention=True,
-                    q_noise=self.quant_noise,
-                    qn_block_size=self.quant_noise_block_size,
-                    use_rope=getattr(cfg, "use_rope", False),
-                )
-                if (self.attn_implementation == "native")
-                else FastMultiheadAttention(
-                    embed_dim,
-                    cfg.encoder.attention_heads,
-                    dropout=cfg.attention_dropout,
-                    self_attention=True,
-                    use_rope=getattr(cfg, "use_rope", False)
-                )
-            )
-        else:
+        if self.attn_implementation == "fairseq":
             return MultiheadAttention(
                 embed_dim,
                 cfg.encoder.attention_heads,
@@ -195,9 +160,37 @@ class TransformerEncoderLayerBase(nn.Module):
                 qn_block_size=self.quant_noise_block_size,
                 xformers_att_config=cfg.encoder.xformers_att_config,
             )
+        elif self.attn_implementation == "native":
+            return NativeMultiheadAttention(
+                embed_dim,
+                cfg.encoder.attention_heads,
+                dropout=cfg.attention_dropout,
+                self_attention=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                use_rope=getattr(cfg, "use_rope", False),
+            )
+        elif self.attn_implementation == "fast":
+            return FastMultiheadAttention(
+                embed_dim,
+                cfg.encoder.attention_heads,
+                dropout=cfg.attention_dropout,
+                self_attention=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                use_rope=getattr(cfg, "use_rope", False),
+            )
+        else:
+            raise NotImplementedError(
+                f"Unknown attention implementation: {self.attn_implementation}"
+            )
 
     def normalization(self, dim, rms=False):
-        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
+        return (
+            LayerNorm(dim, export=self.cfg.export)
+            if not rms
+            else RMSNorm(dim, export=self.cfg.export)
+        )
 
     def residual_connection(self, x, residual):
         return residual + x
@@ -275,14 +268,14 @@ class TransformerEncoderLayerBase(nn.Module):
         if self.normalize_before:
             x = self.final_layer_norm(x)
 
-        x = (
-            self.activation_fn(self.gate_fc(x)) * self.fc1(x)
-            if self.gate_fc is not None
-            else self.activation_fn(self.fc1(x))
-        )
-        x = self.activation_dropout_module(x)
-
-        x = self.fc2(x)
+        if not self.use_glu:
+            # FFN Module
+            x = self.activation_fn(self.fc1(x))
+            x = self.activation_dropout_module(x)
+            x = self.fc2(x)
+        else:
+            # GLU Module
+            x = self.glu(x)
 
         fc_result = x
 
@@ -347,26 +340,11 @@ class TransformerDecoderLayerBase(nn.Module):
             add_bias_kv=add_bias_kv,
             add_zero_attn=add_zero_attn,
         )
-        self.attn_ln = (
-            self.normalization(self.embed_dim, rms=cfg.decoder.use_rmsnorm)
-            if utils.safe_getattr(cfg, "scale_attn", False)
-            else None
-        )
         self.nh = self.self_attn.num_heads
         self.head_dim = self.self_attn.head_dim
-        scale_heads = utils.safe_getattr(cfg, "scale_heads", False)
-        self.c_attn = (
-            nn.Parameter(torch.ones((self.nh,)), requires_grad=True)
-            if scale_heads
-            else None
-        )
 
-        activation_dropout_p = cfg.activation_dropout
-        if activation_dropout_p == 0:
-            # for backwards compatibility with models that use cfg.relu_dropout
-            activation_dropout_p = cfg.relu_dropout or 0
         self.activation_dropout_module = FairseqDropout(
-            float(activation_dropout_p), module_name=self.__class__.__name__
+            float(cfg.activation_dropout), module_name=self.__class__.__name__
         )
         self.normalize_before = cfg.decoder.normalize_before
 
@@ -383,48 +361,26 @@ class TransformerDecoderLayerBase(nn.Module):
                 self.embed_dim, rms=cfg.decoder.use_rmsnorm
             )
 
-        self.ffn_layernorm = (
-            self.normalization(cfg.decoder.ffn_embed_dim, rms=cfg.decoder.use_rmsnorm)
-            if utils.safe_getattr(cfg, "scale_fc", False)
-            else None
-        )
-        self.w_resid = (
-            nn.Parameter(
-                torch.ones(
-                    self.embed_dim,
-                ),
-                requires_grad=True,
-            )
-            if utils.safe_getattr(cfg, "scale_resids", False)
-            else None
-        )
+        self.use_glu = getattr(cfg.decoder, "use_glu", False)
 
-        self.activation_fn = utils.get_activation_fn(activation=cfg.activation_fn)
-        self.fc1 = self.build_fc1(
-            self.embed_dim,
-            cfg.decoder.ffn_embed_dim,
-            not cfg.decoder.use_gated_ffn,
-            self.quant_noise,
-            self.quant_noise_block_size,
-        )
-        self.fc2 = self.build_fc2(
-            cfg.decoder.ffn_embed_dim,
-            self.embed_dim,
-            not cfg.decoder.use_gated_ffn,
-            self.quant_noise,
-            self.quant_noise_block_size,
-        )
-
-        if cfg.decoder.use_gated_ffn:
-            self.gate_fc = self.build_gate_fc(
+        if not self.use_glu:
+            self.activation_fn = utils.get_activation_fn(activation=cfg.activation_fn)
+            self.fc1 = self.build_fc1(
                 self.embed_dim,
                 cfg.decoder.ffn_embed_dim,
-                not cfg.decoder.use_gated_ffn,
+                self.quant_noise,
+                self.quant_noise_block_size,
+            )
+            self.fc2 = self.build_fc2(
+                cfg.decoder.ffn_embed_dim,
+                self.embed_dim,
                 self.quant_noise,
                 self.quant_noise_block_size,
             )
         else:
-            self.gate_fc = None
+            self.glu = self.build_glu(
+                self.embed_dim, cfg.decoder.ffn_embed_dim, cfg.activation_fn
+            )
 
         self.final_layer_norm = self.normalization(
             self.embed_dim, rms=cfg.decoder.use_rmsnorm
@@ -433,47 +389,19 @@ class TransformerDecoderLayerBase(nn.Module):
         self.need_attn = True
         self.onnx_trace = False
 
-    def build_fc1(self, input_dim, output_dim, bias, q_noise, qn_block_size):
-        return quant_noise(
-            nn.Linear(input_dim, output_dim, bias=bias), q_noise, qn_block_size
-        )
+    def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
+        return quant_noise(nn.Linear(input_dim, output_dim), q_noise, qn_block_size)
 
-    def build_fc2(self, input_dim, output_dim, bias, q_noise, qn_block_size):
-        return quant_noise(
-            nn.Linear(input_dim, output_dim, bias=bias), q_noise, qn_block_size
-        )
+    def build_fc2(self, input_dim, output_dim, q_noise, qn_block_size):
+        return quant_noise(nn.Linear(input_dim, output_dim), q_noise, qn_block_size)
 
-    def build_gate_fc(self, input_dim, output_dim, bias, q_noise, qn_block_size):
-        return quant_noise(
-            nn.Linear(input_dim, output_dim, bias=bias), q_noise, qn_block_size
-        )
+    def build_glu(self, input_dim, intermediate_dim, activation_fn="silu", bias=False):
+        return GLU(input_dim, intermediate_dim, activation_fn=activation_fn, bias=bias)
 
     def build_self_attention(
         self, embed_dim, cfg, add_bias_kv=False, add_zero_attn=False
     ):
-        if self.attn_implementation!= "fairseq":
-            return (
-                NativeMultiheadAttention(
-                    embed_dim,
-                    cfg.decoder.attention_heads,
-                    dropout=cfg.attention_dropout,
-                    add_bias_kv=add_bias_kv,
-                    add_zero_attn=add_zero_attn,
-                    self_attention=True,
-                    q_noise=self.quant_noise,
-                    qn_block_size=self.quant_noise_block_size,
-                    use_rope=getattr(cfg, "use_rope", False),
-                )
-                if (self.attn_implementation == "native")
-                else FastMultiheadAttention(
-                    embed_dim,
-                    cfg.decoder.attention_heads,
-                    dropout=cfg.attention_dropout,
-                    self_attention=True,
-                    use_rope=getattr(cfg, "use_rope", False),
-                )
-            )
-        else:
+        if self.attn_implementation == "fairseq":
             return MultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
@@ -485,31 +413,39 @@ class TransformerDecoderLayerBase(nn.Module):
                 qn_block_size=self.quant_noise_block_size,
                 xformers_att_config=cfg.decoder.xformers_att_config,
             )
-
-    def build_encoder_attention(self, embed_dim, cfg):
-        if self.attn_implementation != "fairseq":
-            return (
-                NativeMultiheadAttention(
-                    embed_dim,
-                    cfg.decoder.attention_heads,
-                    kdim=cfg.encoder.embed_dim,
-                    vdim=cfg.encoder.embed_dim,
-                    dropout=cfg.attention_dropout,
-                    encoder_decoder_attention=True,
-                    q_noise=self.quant_noise,
-                    qn_block_size=self.quant_noise_block_size,
-                )
-                if (self.attn_implementation == "native")
-                else FastMultiheadAttention(
-                    embed_dim,
-                    cfg.decoder.attention_heads,
-                    kdim=cfg.encoder.embed_dim,
-                    vdim=cfg.encoder.embed_dim,
-                    dropout=cfg.attention_dropout,
-                    encoder_decoder_attention=True,
-                )
+        elif self.attn_implementation == "native":
+            return NativeMultiheadAttention(
+                embed_dim,
+                cfg.decoder.attention_heads,
+                dropout=cfg.attention_dropout,
+                add_bias_kv=add_bias_kv,
+                add_zero_attn=add_zero_attn,
+                self_attention=True,
+                is_decoder=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                use_rope=getattr(cfg, "use_rope", False),
+            )
+        elif self.attn_implementation == "fast":
+            return FastMultiheadAttention(
+                embed_dim,
+                cfg.decoder.attention_heads,
+                dropout=cfg.attention_dropout,
+                add_bias_kv=add_bias_kv,
+                add_zero_attn=add_zero_attn,
+                self_attention=True,
+                is_decoder=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                use_rope=getattr(cfg, "use_rope", False),
             )
         else:
+            raise NotImplementedError(
+                f"Unknown attention implementation: {self.attn_implementation}"
+            )
+
+    def build_encoder_attention(self, embed_dim, cfg):
+        if self.attn_implementation == "fairseq":
             return MultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
@@ -520,6 +456,34 @@ class TransformerDecoderLayerBase(nn.Module):
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
                 xformers_att_config=cfg.encoder.xformers_att_config,
+            )
+        elif self.attn_implementation == "native":
+            return NativeMultiheadAttention(
+                embed_dim,
+                cfg.decoder.attention_heads,
+                kdim=cfg.encoder.embed_dim,
+                vdim=cfg.encoder.embed_dim,
+                dropout=cfg.attention_dropout,
+                encoder_decoder_attention=True,
+                is_decoder=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+            )
+        elif self.attn_implementation == "fast":
+            return FastMultiheadAttention(
+                embed_dim,
+                cfg.decoder.attention_heads,
+                kdim=cfg.encoder.embed_dim,
+                vdim=cfg.encoder.embed_dim,
+                dropout=cfg.attention_dropout,
+                encoder_decoder_attention=True,
+                is_decoder=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+            )
+        else:
+            raise NotImplementedError(
+                f"Unknown attention implementation: {self.attn_implementation}"
             )
 
     def prepare_for_onnx_export_(self):
@@ -609,13 +573,6 @@ class TransformerDecoderLayerBase(nn.Module):
             need_weights=False,
             attn_mask=self_attn_mask,
         )
-        if self.c_attn is not None:
-            tgt_len, bsz = x.size(0), x.size(1)
-            x = x.view(tgt_len, bsz, self.nh, self.head_dim)
-            x = torch.einsum("tbhd,h->tbhd", x, self.c_attn)
-            x = x.reshape(tgt_len, bsz, self.embed_dim)
-        if self.attn_ln is not None:
-            x = self.attn_ln(x)
         x = self.dropout_module(x)
         x = self.residual_connection(x, residual)
         if not self.normalize_before:
@@ -655,21 +612,16 @@ class TransformerDecoderLayerBase(nn.Module):
         if self.normalize_before:
             x = self.final_layer_norm(x)
 
-        x = (
-            self.activation_fn(self.gate_fc(x)) * self.fc1(x)
-            if self.gate_fc is not None
-            else self.activation_fn(self.fc1(x))
-        )
-        x = self.activation_dropout_module(x)
-
-        if self.ffn_layernorm is not None:
-            x = self.ffn_layernorm(x)
-
-        x = self.fc2(x)
+        # FFN Module
+        if not self.use_glu:
+            x = self.activation_fn(self.fc1(x))
+            x = self.activation_dropout_module(x)
+            x = self.fc2(x)
+        else:
+            # GLU Module
+            x = self.glu(x)
 
         x = self.dropout_module(x)
-        if self.w_resid is not None:
-            residual = torch.mul(self.w_resid, residual)
         x = self.residual_connection(x, residual)
 
         if not self.normalize_before:
