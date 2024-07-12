@@ -11,14 +11,19 @@ class MLP(nn.Module):
         self.in_features = in_features
         self.intermediate_features = intermediate_features
         self.act_fn = utils.get_activation_fn(activation_fn)
-        self.fc1 = nn.Linear(self.in_features, self.intermediate_features, bias=bias)
-        self.fc2 = nn.Linear(self.intermediate_features, self.in_features, bias=bias)
+        self.up_proj = nn.Linear(
+            self.in_features, self.intermediate_features, bias=bias
+        )
+        self.down_proj = nn.Linear(
+            self.intermediate_features, self.in_features, bias=bias
+        )
 
     def forward(self, x):
-        return self.fc2(self.act_fn(self.fc1(x)))
+        return self.down_proj(self.act_fn(self.up_proj(x)))
 
 
 # Gated Linear Unit as proposed by Noam Shazeer in `GLU Variants Improve Transformer`
+# COPIED FROM: https://github.com/huggingface/transformers/blob/main/src/transformers/models/phi3/modeling_phi3.py
 class GLU(nn.Module):
     def __init__(
         self, in_features, intermediate_features, activation_fn="silu", bias=False
@@ -27,9 +32,15 @@ class GLU(nn.Module):
         self.in_features = in_features
         self.intermediate_features = intermediate_features
         self.act_fn = utils.get_activation_fn(activation_fn)
-        self.fc1 = nn.Linear(self.in_features, self.intermediate_features, bias=bias)
-        self.fc2 = nn.Linear(self.in_features, self.intermediate_features, bias=bias)
-        self.fc3 = nn.Linear(self.intermediate_features, self.in_features, bias=bias)
+        self.gate_up_proj = nn.Linear(
+            self.in_features, 2 * self.intermediate_features, bias=bias
+        )
+        self.down_proj = nn.Linear(
+            self.intermediate_features, self.in_features, bias=bias
+        )
 
     def forward(self, x):
-        return self.fc3(self.act_fn(self.fc2(x)) * self.fc1(x))
+        up_states = self.gate_up_proj(x)
+        gate, up_states = up_states.chunk(2, dim=-1)
+        up_states = up_states * self.activation_fn(gate)
+        return self.down_proj(up_states)

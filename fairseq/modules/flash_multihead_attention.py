@@ -4,24 +4,39 @@
 # LICENSE file in the root directory of this source tree.
 
 from typing import Dict, Optional, Tuple
+from torch.nn import Parameter
+from fairseq import utils
 
 import torch
-from torch import Tensor, nn
-from torch.nn import Parameter
-
-from rotary_embedding_torch import RotaryEmbedding
-
-from fairseq import utils
+from torch import nn
+from torch import Tensor
 from einops import rearrange
-from fairseq.modules.fairseq_dropout import FairseqDropout
+import torch.nn.functional as F
 from fairseq.modules.quant_noise import quant_noise
 from fairseq.modules.multihead_attention import MultiheadAttention
 
+try:
+    from flash_attn import flash_attn_func, flash_attn_varlen_func
+    from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
+except ImportError:
+    raise ImportError("Please install the flash_attn>=2.5.6")
 
-class NativeMultiheadAttention(MultiheadAttention):
-    """Native Multi-headed attention
-    Removes a lot of the overhead in the MultiheadAttention module
-    See "Attention Is All You Need" for more details.
+try:
+    from rotary_embedding_torch import RotaryEmbedding
+except ImportError:
+    raise ImportError("Please install the rotary-embedding-torch>=0.6.4")
+
+
+# HACK: This attention variant is mainly for speedup.
+# HACK: Attenion weights are internalized and None is returned for them.
+# HACK: Double check your requirements before using this variant.
+# HACK: THis module needs extensive testing before using it in production.
+
+
+class FlashMultiheadAttention(MultiheadAttention):
+    """Flash Multi-headed attention
+    A Flash Attention version of NativeMultiheadAttention.
+    Copied from: https://huggingface.co/ai4bharat/indictrans2-en-indic-1B/blob/main/modeling_indictrans.py
     """
 
     def __init__(
@@ -40,6 +55,7 @@ class NativeMultiheadAttention(MultiheadAttention):
         q_noise=0.0,
         qn_block_size=8,
         use_rope=False,
+        use_alibi=False,
         is_decoder=False,
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
@@ -52,19 +68,15 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.num_heads = num_heads
         self.dropout_p = dropout
 
-        self.dropout_module = FairseqDropout(
-            dropout, module_name=self.__class__.__name__
-        )
-
         self.head_dim = embed_dim // num_heads
         assert (
             self.head_dim * num_heads == self.embed_dim
         ), "embed_dim must be divisible by num_heads"
-        self.scaling = self.head_dim**-0.5
 
         self.self_attention = self_attention
         self.encoder_decoder_attention = encoder_decoder_attention
 
+        self.alibi = use_alibi and self.self_attention
         self.rope = use_rope and self.self_attention
 
         # partial rotation in RoPE
@@ -97,9 +109,14 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.q_proj = quant_noise(
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
         )
-
         self.out_proj = quant_noise(
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
+        )
+
+        self.alibi_slopes = (
+            torch.Tensor(utils.get_alibi_slopes(num_heads)).float()
+            if self.alibi
+            else None
         )
 
         if add_bias_kv:
@@ -111,20 +128,144 @@ class NativeMultiheadAttention(MultiheadAttention):
         self.add_zero_attn = add_zero_attn
         self.beam_size = 1
         self.reset_parameters()
-
         self.init_incremental_state()
+
+    def _get_unpad_data(self, attn_mask):
+        seqlens_in_batch = attn_mask.sum(dim=-1, dtype=torch.int32)
+        indices = torch.nonzero(attn_mask.flatten(), as_tuple=False).flatten()
+        max_seqlen_in_batch = seqlens_in_batch.max().item()
+        cu_seqlens = F.pad(
+            torch.cumsum(seqlens_in_batch, dim=0, dtype=torch.int32), (1, 0)
+        )
+        return (
+            indices,
+            cu_seqlens,
+            max_seqlen_in_batch,
+        )
+
+    def _flash_attention_forward(
+        self,
+        q,
+        k,
+        v,
+        attn_mask,
+        dropout=0.0,
+    ):
+        """
+        Calls the forward method of Flash Attention - if the input hidden states contain at least one padding token
+        first unpad the input, then computes the attention scores and pad the final attention scores.
+        Args:
+            q (`torch.Tensor`):
+                Input query states to be passed to Flash Attention API
+            k (`torch.Tensor`):
+                Input key states to be passed to Flash Attention API
+            v (`torch.Tensor`):
+                Input value states to be passed to Flash Attention API
+            attn_mask (`torch.Tensor`):
+                The padding mask - corresponds to a tensor of size `(batch_size, seq_len)` where 0 stands for the
+                position of padding tokens and 1 for the position of non-padding tokens.
+            dropout (`float`):
+                Attention dropout
+            softmax_scale (`float`, *optional*):
+                The scaling of QK^T before applying softmax. Default to 1 / sqrt(head_dim)
+        """
+        causal = self.is_decoder and self.self_attention
+
+        # Contains at least one padding token in the sequence
+        if attn_mask is not None:
+            bsz, tgt_len, _, _ = q.shape
+            (
+                q,
+                k,
+                v,
+                indices_q,
+                cu_seq_lens,
+                max_seq_lens,
+            ) = self._upad_input(q, k, v, attn_mask)
+
+            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+            attn_output_unpad = flash_attn_varlen_func(
+                q,
+                k,
+                v,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                max_seqlen_q=max_seqlen_in_batch_q,
+                max_seqlen_k=max_seqlen_in_batch_k,
+                dropout_p=dropout,
+                causal=causal,
+                alibi_slopes=self.alibi_slopes,
+            )
+
+            attn_output = pad_input(attn_output_unpad, indices_q, bsz, tgt_len)
+        else:
+            attn_output = flash_attn_func(
+                q,
+                k,
+                v,
+                dropout_p=dropout,
+                causal=causal,
+                alibi_slopes=self.alibi_slopes,
+            )
+
+        return attn_output
+
+    def _upad_input(self, q, k, v, attn_mask):
+        indices_k, cu_seqlens_k, max_seqlen_in_batch_k = self._get_unpad_data(attn_mask)
+        bsz, src_len, num_heads, head_dim = k.shape
+
+        tgt_len = q.size(1)
+
+        k = index_first_axis(
+            k.reshape(bsz * src_len, num_heads, head_dim),
+            indices_k,
+        )
+        v = index_first_axis(
+            v.reshape(bsz * src_len, num_heads, head_dim),
+            indices_k,
+        )
+        if tgt_len == src_len:
+            # during training
+            q = index_first_axis(
+                q.reshape(bsz * src_len, num_heads, head_dim),
+                indices_k,
+            )
+            cu_seqlens_q = cu_seqlens_k
+            max_seqlen_in_batch_q = max_seqlen_in_batch_k
+            indices_q = indices_k
+        elif tgt_len == 1:
+            # during inference
+            q = q.squeeze(1)
+            cu_seqlens_q = torch.arange(bsz + 1, dtype=torch.int32, device=q.device)
+            max_seqlen_in_batch_q = 1
+            indices_q = cu_seqlens_q[:-1]
+        else:
+            # The -q_len: slice assumes left padding.
+            q, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(
+                q, attn_mask[:, -tgt_len:]
+            )
+
+        return (
+            q,
+            k,
+            v,
+            indices_q,
+            (cu_seqlens_q, cu_seqlens_k),
+            (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
+        )
 
     def forward(
         self,
         query: Tensor,
         key: Optional[Tensor],
         value: Optional[Tensor],
+        need_weights: bool = False,
+        static_kv: bool = False,
         key_padding_mask: Optional[Tensor] = None,
         incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-        need_weights: bool = True,
-        static_kv: bool = False,
         attn_mask: Optional[Tensor] = None,
-        before_softmax: bool = False,
         need_head_weights: bool = False,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
@@ -144,11 +285,6 @@ class NativeMultiheadAttention(MultiheadAttention):
                 weights for each head. Implies *need_weights*. Default:
                 return the average attention weights over all heads.
         """
-
-        if need_head_weights:
-            need_weights = True
-
-        is_tpu = query.device.type == "xla"
 
         tgt_len, bsz, embed_dim = query.size()
         src_len = tgt_len
@@ -200,16 +336,14 @@ class NativeMultiheadAttention(MultiheadAttention):
             k = self.k_proj(key)
             v = self.v_proj(value)
 
-        q *= self.scaling
-
         if self.bias_k is not None:
             assert self.bias_v is not None
             k, v, attn_mask, key_padding_mask = self._add_bias(
                 k=k,
                 v=v,
+                bsz=bsz,
                 attn_mask=attn_mask,
                 key_padding_mask=key_padding_mask,
-                bsz=bsz,
             )
 
         q = (
@@ -261,7 +395,7 @@ class NativeMultiheadAttention(MultiheadAttention):
             if "prev_key_padding_mask" in saved_state:
                 prev_key_padding_mask = saved_state["prev_key_padding_mask"]
             assert k is not None and v is not None
-            key_padding_mask = NativeMultiheadAttention._append_prev_key_padding_mask(
+            key_padding_mask = FlashMultiheadAttention._append_prev_key_padding_mask(
                 key_padding_mask=key_padding_mask,
                 prev_key_padding_mask=prev_key_padding_mask,
                 batch_size=kv_bsz,
@@ -311,83 +445,26 @@ class NativeMultiheadAttention(MultiheadAttention):
                 k=k, v=v, key_padding_mask=key_padding_mask, attn_mask=attn_mask
             )
 
-        if self.encoder_decoder_attention and bsz != kv_bsz:
-            attn_weights = torch.einsum(
-                "bxhtd,bhsd->bxhts",
-                q.view((kv_bsz, -1, self.num_heads) + q.size()[1:]),
-                k.view((kv_bsz, self.num_heads) + k.size()[1:]),
-            )
-            attn_weights = attn_weights.reshape((-1,) + attn_weights.size()[-2:])
-        else:
-            attn_weights = torch.bmm(q, k.transpose(1, 2))
-
-        assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
-
-        if attn_mask is not None:
-            attn_weights += attn_mask
-
         if key_padding_mask is not None:
-            # don't attend to padding symbols
-            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
-            if not is_tpu:
-                attn_weights = attn_weights.view(
-                    kv_bsz, -1, self.num_heads, tgt_len, src_len
-                )
-                attn_weights = attn_weights.masked_fill(
-                    key_padding_mask.unsqueeze(1)
-                    .unsqueeze(2)
-                    .unsqueeze(3)
-                    .to(torch.bool),
-                    float("-inf"),
-                )
-            else:
-                attn_weights = attn_weights.transpose(0, 2)
-                attn_weights = attn_weights.masked_fill(key_padding_mask, float("-inf"))
-                attn_weights = attn_weights.transpose(0, 2)
-            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+            if key_padding_mask.dtype != torch.bool:
+                # convert to bool in case user provides a FloatTensor
+                key_padding_mask = key_padding_mask.bool()
+            # invert the key_padding_mask
+            # as the key_padding_mask is 1 for padding tokens and 0 for non-padding tokens
+            key_padding_mask = ~key_padding_mask
 
-        if before_softmax:
-            return attn_weights, v
+        # q, k, v should be (batch_size, timesteps, num_heads, head_dim)
+        q = rearrange(q, "(b h) t d -> b t h d", h=self.num_heads, d=self.head_dim)
+        k = rearrange(k, "(b h) t d -> b t h d", h=self.num_heads, d=self.head_dim)
+        v = rearrange(v, "(b h) t d -> b t h d", h=self.num_heads, d=self.head_dim)
 
-        attn_weights_float = utils.softmax(attn_weights, dim=-1, onnx_trace=False)
-        attn_weights = attn_weights_float.type_as(attn_weights)
-        attn_probs = self.dropout_module(attn_weights)
+        attn = self._flash_attention_forward(
+            q=q, k=k, v=v, attn_mask=key_padding_mask, dropout=self.dropout_p
+        )
 
-        assert v is not None
-        attn: Optional[Tensor] = None
-        if self.encoder_decoder_attention and bsz != kv_bsz:
-            attn = torch.einsum(
-                "bxhts,bhsd->bxhtd",
-                attn_probs.view(
-                    (
-                        kv_bsz,
-                        -1,
-                        self.num_heads,
-                    )
-                    + attn_probs.size()[1:]
-                ),
-                v.view(
-                    (
-                        kv_bsz,
-                        self.num_heads,
-                    )
-                    + v.size()[1:]
-                ),
-            )
-            attn = attn.reshape((-1,) + attn.size()[-2:])
-        else:
-            attn = torch.bmm(attn_probs, v)
-        assert list(attn.size()) == [bsz * self.num_heads, tgt_len, self.head_dim]
-
-        attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, self.embed_dim)
+        # the attn tensor would be of shape (batch_size, timesteps, num_heads, head_dim)
+        attn = rearrange(
+            attn, "b t h c -> t b (h c)", h=self.num_heads, c=self.head_dim
+        )
         attn = self.out_proj(attn)
-        attn_weights: Optional[Tensor] = None
-        if need_weights:
-            attn_weights = attn_weights_float.view(
-                bsz, self.num_heads, tgt_len, src_len
-            ).transpose(1, 0)
-            if not need_head_weights:
-                # average attention weights over heads
-                attn_weights = attn_weights.mean(dim=0)
-
-        return attn, attn_weights
+        return attn, None

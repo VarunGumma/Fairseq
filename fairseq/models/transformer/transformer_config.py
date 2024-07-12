@@ -235,7 +235,7 @@ class TransformerConfig(FairseqDataclass):
     cross_self_attention: bool = field(
         default=False, metadata={"help": "perform cross+self-attention"}
     )
-    attn_implementation: ChoiceEnum(["native", "fast", "fairseq"]) = field(
+    attn_implementation: ChoiceEnum(["fast", "flash", "fairseq"]) = field(
         default="fairseq",
         metadata={"help": "Mainly added for RoPE/LoRA and efficiency"},
     )
@@ -249,9 +249,9 @@ class TransformerConfig(FairseqDataclass):
         default=False,
         metadata={"help": "use Rotary Positional Embedding (RoPE) in self-attention layers"},
     )
-    use_alibi: Optional[str] = field(
+    use_alibi: Optional[bool] = field(
         default=None,
-        metadata={"help": "use ALiBi positional encoding (symmetrical/asymmetrical)"},
+        metadata={"help": "use ALiBi positional encoding (symmetrical)"},
     )
 
     # args for Training with Quantization Noise for Extreme Model Compression ({Fan*, Stock*} et al., 2020)

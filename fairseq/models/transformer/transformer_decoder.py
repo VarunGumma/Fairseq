@@ -158,7 +158,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         else:
             self.project_out_activation_fn = None
 
-        if cfg.use_alibi is not None:
+        if cfg.use_alibi and cfg.attn_implementation != "flash":
             assert (
                 self.embed_positions is None
             ), "ALiBi shouldn't be used with positional embedding"
@@ -166,6 +166,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
                 cfg.decoder.attention_heads, self.max_target_positions
             )
         else:
+            # FA2 internally uses ALiBi, so we don't need to use it here
             self.alibi = None
 
         self.adaptive_softmax = None

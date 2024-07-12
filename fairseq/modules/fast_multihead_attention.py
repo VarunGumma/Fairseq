@@ -4,8 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from typing import Dict, Optional, Tuple
-
-from rotary_embedding_torch import RotaryEmbedding
+from torch.nn import Parameter
 
 import torch
 import torch.nn as nn
@@ -13,13 +12,17 @@ from torch import Tensor
 from einops import rearrange
 from fairseq.modules.quant_noise import quant_noise
 from torch.nn.functional import scaled_dot_product_attention
-
 from fairseq.modules.multihead_attention import MultiheadAttention
+
+try:
+    from rotary_embedding_torch import RotaryEmbedding
+except ImportError:
+    raise ImportError("Please install the rotary-embedding-torch>=0.6.4")
 
 # HACK: This attention variant is mainly for speedup.
 # HACK: Attenion weights are internalized and None is returned for them.
 # HACK: Double check your requirements before using this variant.
-# BUG: FlashAttention does not work with an attn_mask.
+# BUG: FlashAttention does not work with an attn_mask. Use FlashMutliheadAttention instead.
 
 
 class FastMultiheadAttention(MultiheadAttention):
@@ -95,7 +98,6 @@ class FastMultiheadAttention(MultiheadAttention):
         self.q_proj = quant_noise(
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
         )
-
         self.out_proj = quant_noise(
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
         )
@@ -109,7 +111,6 @@ class FastMultiheadAttention(MultiheadAttention):
         self.add_zero_attn = add_zero_attn
         self.beam_size = 1
         self.reset_parameters()
-
         self.init_incremental_state()
 
     def forward(
@@ -197,9 +198,9 @@ class FastMultiheadAttention(MultiheadAttention):
             k, v, attn_mask, key_padding_mask = self._add_bias(
                 k=k,
                 v=v,
+                bsz=bsz,
                 attn_mask=attn_mask,
                 key_padding_mask=key_padding_mask,
-                bsz=bsz,
             )
 
         q = (
@@ -313,6 +314,7 @@ class FastMultiheadAttention(MultiheadAttention):
                 * torch.finfo(q.dtype).min
             )
 
+            # SDPA cannot accept both causal and attn_mask
             if attn_mask is not None:
                 if attn_mask.size() != key_padding_mask.size():
                     combined_mask = attn_mask.unsqueeze(0) + key_padding_mask
@@ -326,7 +328,7 @@ class FastMultiheadAttention(MultiheadAttention):
 
         combined_mask = combined_mask.to(q.dtype) if combined_mask is not None else None
 
-        # this the part that is different from NativeMultiheadAttention
+        # this the part that is different from MultiheadAttention
         # it uses a kernelized implementation of SDPA
         # and the attn_weights are internalized
         with torch.backends.cuda.sdp_kernel(
@@ -343,13 +345,9 @@ class FastMultiheadAttention(MultiheadAttention):
                 dropout_p=self.dropout_p,
             )
 
-        assert list(attn.size()) == [
-            bsz * self.num_heads,
-            tgt_len,
-            self.head_dim,
-        ], f"attn size should be {[bsz * self.num_heads, tgt_len, self.head_dim]}, but is {attn.shape()}"
-
-        attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, self.embed_dim)
+        # attn shape: (bsz * self.num_heads, tgt_len, self.head_dim)
+        attn = rearrange(
+            attn, "(b h) t c -> t b (h c)", h=self.num_heads, c=self.head_dim
+        )
         attn = self.out_proj(attn)
-
         return attn, None

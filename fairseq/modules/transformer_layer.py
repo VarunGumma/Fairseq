@@ -18,8 +18,8 @@ from fairseq.modules import (
     RMSNorm,
     GLU,
     MultiheadAttention,
-    NativeMultiheadAttention,
     FastMultiheadAttention,
+    FlashMultiheadAttention
 )
 
 # This module does not support `scale_attn`, `scale_heads`, `scale_fc`, `scale_resids` anymore
@@ -160,16 +160,6 @@ class TransformerEncoderLayerBase(nn.Module):
                 qn_block_size=self.quant_noise_block_size,
                 xformers_att_config=cfg.encoder.xformers_att_config,
             )
-        elif self.attn_implementation == "native":
-            return NativeMultiheadAttention(
-                embed_dim,
-                cfg.encoder.attention_heads,
-                dropout=cfg.attention_dropout,
-                self_attention=True,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-                use_rope=getattr(cfg, "use_rope", False),
-            )
         elif self.attn_implementation == "fast":
             return FastMultiheadAttention(
                 embed_dim,
@@ -179,6 +169,17 @@ class TransformerEncoderLayerBase(nn.Module):
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
                 use_rope=getattr(cfg, "use_rope", False),
+            )
+        elif self.attn_implementation == "flash":
+            return FlashMultiheadAttention(
+                embed_dim,
+                cfg.encoder.attention_heads,
+                dropout=cfg.attention_dropout,
+                self_attention=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                use_rope=getattr(cfg, "use_rope", False),
+                use_alibi=getattr(cfg, "use_alibi", False),
             )
         else:
             raise NotImplementedError(
@@ -268,14 +269,11 @@ class TransformerEncoderLayerBase(nn.Module):
         if self.normalize_before:
             x = self.final_layer_norm(x)
 
-        if not self.use_glu:
-            # FFN Module
-            x = self.activation_fn(self.fc1(x))
-            x = self.activation_dropout_module(x)
-            x = self.fc2(x)
-        else:
-            # GLU Module
-            x = self.glu(x)
+        x = (
+            self.fc2(self.activation_dropout_module(self.activation_fn(self.fc1(x))))
+            if not self.use_glu
+            else self.glu(x)
+        )
 
         fc_result = x
 
@@ -413,19 +411,6 @@ class TransformerDecoderLayerBase(nn.Module):
                 qn_block_size=self.quant_noise_block_size,
                 xformers_att_config=cfg.decoder.xformers_att_config,
             )
-        elif self.attn_implementation == "native":
-            return NativeMultiheadAttention(
-                embed_dim,
-                cfg.decoder.attention_heads,
-                dropout=cfg.attention_dropout,
-                add_bias_kv=add_bias_kv,
-                add_zero_attn=add_zero_attn,
-                self_attention=True,
-                is_decoder=True,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-                use_rope=getattr(cfg, "use_rope", False),
-            )
         elif self.attn_implementation == "fast":
             return FastMultiheadAttention(
                 embed_dim,
@@ -439,6 +424,21 @@ class TransformerDecoderLayerBase(nn.Module):
                 qn_block_size=self.quant_noise_block_size,
                 use_rope=getattr(cfg, "use_rope", False),
             )
+        elif self.attn_implementation == "flash":
+            return FlashMultiheadAttention(
+                embed_dim,
+                cfg.decoder.attention_heads,
+                dropout=cfg.attention_dropout,
+                add_bias_kv=add_bias_kv,
+                add_zero_attn=add_zero_attn,
+                self_attention=True,
+                is_decoder=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                use_rope=getattr(cfg, "use_rope", False),
+                use_alibi=getattr(cfg, "use_alibi", False),
+            )
+
         else:
             raise NotImplementedError(
                 f"Unknown attention implementation: {self.attn_implementation}"
@@ -457,8 +457,8 @@ class TransformerDecoderLayerBase(nn.Module):
                 qn_block_size=self.quant_noise_block_size,
                 xformers_att_config=cfg.encoder.xformers_att_config,
             )
-        elif self.attn_implementation == "native":
-            return NativeMultiheadAttention(
+        elif self.attn_implementation == "fast":
+            return FastMultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
                 kdim=cfg.encoder.embed_dim,
@@ -469,8 +469,8 @@ class TransformerDecoderLayerBase(nn.Module):
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
             )
-        elif self.attn_implementation == "fast":
-            return FastMultiheadAttention(
+        elif self.attn_implementation == "flash":
+            return FlashMultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
                 kdim=cfg.encoder.embed_dim,
@@ -612,14 +612,11 @@ class TransformerDecoderLayerBase(nn.Module):
         if self.normalize_before:
             x = self.final_layer_norm(x)
 
-        # FFN Module
-        if not self.use_glu:
-            x = self.activation_fn(self.fc1(x))
-            x = self.activation_dropout_module(x)
-            x = self.fc2(x)
-        else:
-            # GLU Module
-            x = self.glu(x)
+        x = (
+            self.fc2(self.activation_dropout_module(self.activation_fn(self.fc1(x))))
+            if not self.use_glu
+            else self.glu(x)
+        )
 
         x = self.dropout_module(x)
         x = self.residual_connection(x, residual)

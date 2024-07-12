@@ -33,8 +33,8 @@ from .location_attention import LocationAttention
 from .lstm_cell_with_zoneout import LSTMCellWithZoneOut
 from .mlp import MLP, GLU
 from .multihead_attention import MultiheadAttention
-from .native_multihead_attention import NativeMultiheadAttention
 from .fast_multihead_attention import FastMultiheadAttention
+from .flash_multihead_attention import FlashMultiheadAttention
 from .positional_embedding import PositionalEmbedding
 from .rms_norm import RMSNorm
 from .same_pad import SamePad, SamePad2d
@@ -73,6 +73,7 @@ __all__ = [
     "EMAModuleConfig",
     "FactorizedEmbedding",
     "FastMultiheadAttention",
+    "FlashMultiheadAttention",
     "FairseqDropout",
     "Fp32BatchNorm",
     "Fp32GroupNorm",
