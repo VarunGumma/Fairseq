@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 def save_checkpoint(cfg: CheckpointConfig, trainer, epoch_itr, val_loss):
     from fairseq import meters
 
-    # force the mdoel to eval mode
+    # force the model to eval mode
     # to merge all lora modules, before saving the model
     trainer.model.eval()
 
