@@ -32,15 +32,15 @@ class GLU(nn.Module):
         self.in_features = in_features
         self.intermediate_features = intermediate_features
         self.act_fn = utils.get_activation_fn(activation_fn)
-        self.gate_up_proj = nn.Linear(
-            self.in_features, 2 * self.intermediate_features, bias=bias
+        self.up_proj = nn.Linear(
+            self.in_features, self.intermediate_features, bias=bias
+        )
+        self.gate_proj = nn.Linear(
+            self.in_features, self.intermediate_features, bias=bias
         )
         self.down_proj = nn.Linear(
             self.intermediate_features, self.in_features, bias=bias
         )
 
     def forward(self, x):
-        up_states = self.gate_up_proj(x)
-        gate, up_states = up_states.chunk(2, dim=-1)
-        up_states = up_states * self.activation_fn(gate)
-        return self.down_proj(up_states)
+        return self.down_proj(self.up_proj(x) * self.act_fn(self.gate_proj(x)))
