@@ -118,20 +118,18 @@ class TransformerEncoderBase(FairseqEncoder):
             else None
         )
 
-        if cfg.use_alibi and cfg.attn_implementation != "flash":
+        if cfg.use_alibi:
             assert (
                 self.embed_positions is None
             ), "ALiBi shouldn't be used with positional embedding"
             self.alibi = utils.alibi(
                 cfg.encoder.attention_heads,
                 self.max_source_positions,
-                asymmetrical=False
+                asymmetrical=False,
             )
         else:
-            # FA2 internally uses ALiBi, so we don't need to use it here
             self.alibi = None
 
-        
     def normalization(self, dim, rms=False):
         return (
             LayerNorm(dim, export=self.cfg.export)

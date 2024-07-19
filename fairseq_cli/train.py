@@ -46,9 +46,9 @@ from fairseq.checkpoint_utils import load_model_ensemble
 from fairseq.modules.lora import LoRALinear, LoRALayer, LoRAEmbedding
 
 
-def mark_only_lora_as_trainable(model, bias) -> None:
+def mark_only_lora_as_trainable(model, bias, saved_modules=None) -> None:
     for n, p in model.named_parameters():
-        p.requires_grad = "lora_" in n
+        p.requires_grad = "lora_" in n and not any([m in n for m in saved_modules])
     if bias == "none":
         return
     elif bias == "all":
@@ -120,7 +120,10 @@ def replace_with_lora(
 
         else:
             replace_with_lora(
-                module, lora_modules, lora_params, parent_module_name=full_module_name
+                module,
+                lora_modules=lora_modules,
+                lora_params=lora_params,
+                parent_module_name=full_module_name,
             )
 
 
@@ -237,10 +240,19 @@ def main(cfg: FairseqConfig) -> None:
             "rank_scaled": lora_config.get("rank_scaled", False),
         }
 
-        lora_modules = set(lora_config["target_modules"].split(","))
+        lora_modules = set(lora_config.get("target_modules", "").split(","))
+        # assert there are target modules specified for LoRA
+        assert len(lora_modules) != [""], "No target modules specified for LoRA"
+        saved_modules = set(lora_config.get("saved_modules", "").split(","))
+        # assert there are no common modules between saved_modules and lora_modules
+        assert len(lora_modules.intersection(saved_modules)) == 0, (
+            "lora_modules and saved_modules cannot have common modules. "
+            "Please remove the following modules from either target_modules or saved_modules: "
+            f"{lora_modules.intersection(saved_modules)}"
+        )
         lora_bias = lora_config.get("bias", "none")
-        replace_with_lora(model, lora_modules, lora_params)
-        mark_only_lora_as_trainable(model, bias=lora_bias)
+        replace_with_lora(model, lora_modules=lora_modules, lora_params=lora_params)
+        mark_only_lora_as_trainable(model, bias=lora_bias, saved_modules=saved_modules)
     ### EXPERIMENTAL :: NOT TO BE USED UNTIL TESTED ###
 
     logger.info(

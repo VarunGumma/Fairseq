@@ -19,7 +19,6 @@ from fairseq.modules import (
     GLU,
     MultiheadAttention,
     FastMultiheadAttention,
-    FlashMultiheadAttention
 )
 
 # This module does not support `scale_attn`, `scale_heads`, `scale_fc`, `scale_resids` anymore
@@ -169,17 +168,6 @@ class TransformerEncoderLayerBase(nn.Module):
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
                 use_rope=getattr(cfg, "use_rope", False),
-            )
-        elif self.attn_implementation == "flash":
-            return FlashMultiheadAttention(
-                embed_dim,
-                cfg.encoder.attention_heads,
-                dropout=cfg.attention_dropout,
-                self_attention=True,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-                use_rope=getattr(cfg, "use_rope", False),
-                use_alibi=getattr(cfg, "use_alibi", False),
             )
         else:
             raise NotImplementedError(
@@ -424,21 +412,6 @@ class TransformerDecoderLayerBase(nn.Module):
                 qn_block_size=self.quant_noise_block_size,
                 use_rope=getattr(cfg, "use_rope", False),
             )
-        elif self.attn_implementation == "flash":
-            return FlashMultiheadAttention(
-                embed_dim,
-                cfg.decoder.attention_heads,
-                dropout=cfg.attention_dropout,
-                add_bias_kv=add_bias_kv,
-                add_zero_attn=add_zero_attn,
-                self_attention=True,
-                is_decoder=True,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-                use_rope=getattr(cfg, "use_rope", False),
-                use_alibi=getattr(cfg, "use_alibi", False),
-            )
-
         else:
             raise NotImplementedError(
                 f"Unknown attention implementation: {self.attn_implementation}"
@@ -459,18 +432,6 @@ class TransformerDecoderLayerBase(nn.Module):
             )
         elif self.attn_implementation == "fast":
             return FastMultiheadAttention(
-                embed_dim,
-                cfg.decoder.attention_heads,
-                kdim=cfg.encoder.embed_dim,
-                vdim=cfg.encoder.embed_dim,
-                dropout=cfg.attention_dropout,
-                encoder_decoder_attention=True,
-                is_decoder=True,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-            )
-        elif self.attn_implementation == "flash":
-            return FlashMultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
                 kdim=cfg.encoder.embed_dim,

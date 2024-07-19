@@ -328,22 +328,17 @@ class FastMultiheadAttention(MultiheadAttention):
 
         combined_mask = combined_mask.to(q.dtype) if combined_mask is not None else None
 
-        # this the part that is different from MultiheadAttention
+        # this the part that is different from MultiheadAttentiond
         # it uses a kernelized implementation of SDPA
         # and the attn_weights are internalized
-        with torch.backends.cuda.sdp_kernel(
-            enable_flash=True,
-            enable_math=True,
-            enable_mem_efficient=True,
-        ):
-            attn = scaled_dot_product_attention(
-                query=q,
-                key=k,
-                value=v,
-                is_causal=False,
-                attn_mask=combined_mask,
-                dropout_p=self.dropout_p,
-            )
+        attn = scaled_dot_product_attention(
+            query=q,
+            key=k,
+            value=v,
+            is_causal=False,
+            attn_mask=combined_mask,
+            dropout_p=self.dropout_p,
+        )
 
         # attn shape: (bsz * self.num_heads, tgt_len, self.head_dim)
         attn = rearrange(

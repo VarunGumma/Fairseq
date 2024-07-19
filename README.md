@@ -31,14 +31,13 @@ This clone of fairseq supports `Knowledge Distillation`, `Recurrent Stacking`, `
 | **Factorized Embedding Parameterization** ([Lan _et al_.](https://openreview.net/forum?id=nZeVKeeFYf9)) | Parameterizes large embeddings by adding an intermediate bottleneck layer | `--encoder-factorized-embed-dim $encoder_fac_embed_dim --decoder-factorized-embed-dim $decoder_fac_embed_dim --factorized-embed-activation-fn $fac_embed_activation_fn` | - |
 | **Penultimate Linear Transformation Activation** | Adds activation to the penultimate linear transformation before the final projection onto the vocabulary | `--decoder-output-activation-fn $decoder_out_activation_fn` | - |
 | **Sanity Validation Steps** | Runs a full pass over the validation set at the beginning of training | `--run-sanity-validation-steps` | - |
-| **Efficient/Debloated Attention Variants** | <ul><li>_FastMultiHeadAttention_: A [torch-functional variant](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html) of _MultiHeadAttention_ with a efficient context manager</li><li>_FlashMultiHeadAttention_: A [flash-attention variant](https://github.com/Dao-AILab/flash-attention) of _MultiHeadAttention_ with even better speedup and efficiency.</li></ul> <span style="color: red;">Both these variants disable several checks and arguments in favour of their implementations, so please double check your requirements before enabling these flags. _FlashMultiheadAttention_ is still in $\alpha$-testing, so use it with **caution**.</span> | <ul><li>_FastMultiHeadAttention_: `--attn-implementation fast`</li><li>_FlashMultiHeadAttention_: `--attn-implementation flash`</li></ul> | [FlashAttention Implementation](https://huggingface.co/ai4bharat/indictrans2-en-indic-1B/blob/main/modeling_indictrans.py) |
+| **Efficient MHA** | A [torch-functional variant](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html) of _MultiHeadAttention_ with a efficient context manager | `--attn-implementation fast`. By default, the value is `fairseq` | - |
 
 
 # Requirements and Installation
 
 * [PyTorch](http://pytorch.org/) version >= 2.1.1
-* [FlashAttention2]((https://github.com/Dao-AILab/flash-attention)) >= 2.5.6
-* Python version >= 3.8, <= 3.11
+* Python version >= 3.8, <= 3.12
 * For training new models, you'll also need an NVIDIA GPU and [NCCL](https://github.com/NVIDIA/nccl)
 * **To install fairseq** and develop locally:
 

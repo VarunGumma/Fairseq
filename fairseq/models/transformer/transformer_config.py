@@ -235,7 +235,7 @@ class TransformerConfig(FairseqDataclass):
     cross_self_attention: bool = field(
         default=False, metadata={"help": "perform cross+self-attention"}
     )
-    attn_implementation: ChoiceEnum(["fast", "flash", "fairseq"]) = field(
+    attn_implementation: ChoiceEnum(["fast", "fairseq"]) = field(
         default="fairseq",
         metadata={"help": "Mainly added for RoPE/LoRA and efficiency"},
     )
