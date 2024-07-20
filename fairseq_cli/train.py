@@ -43,12 +43,13 @@ from fairseq.logging import meters, metrics, progress_bar
 from fairseq.model_parallel.megatron_trainer import MegatronTrainer
 from fairseq.trainer import Trainer
 from fairseq.checkpoint_utils import load_model_ensemble
-from fairseq.modules.lora import LoRALinear, LoRALayer, LoRAEmbedding
+from fairseq.modules.lora import *
 
 
-def mark_only_lora_as_trainable(model, bias, saved_modules=None) -> None:
+def mark_only_lora_as_trainable(model, bias="none") -> None:
     for n, p in model.named_parameters():
-        p.requires_grad = "lora_" in n and not any([m in n for m in saved_modules])
+        p.requires_grad = "lora_" in n
+        logger.info(f"Setting {n} to {'trainable' if p.requires_grad else 'frozen'}")
     if bias == "none":
         return
     elif bias == "all":
@@ -73,6 +74,7 @@ def replace_with_lora(
     - model: The original model to be modified.
     - lora_modules: A list of module names that should be replaced with fairseq.modules.lora.Linear layers.
     - lora_params: A dictionary containing parameters for the fairseq.modules.lora.Linear layer.
+    - parent_module_name: The name of the parent module. Used for recursive calls.
     """
     for name, module in model.named_children():
         full_module_name = (
@@ -87,20 +89,19 @@ def replace_with_lora(
                 module.in_features, module.out_features, **lora_params
             )
 
+            # do this after the initialization always
             if module.weight is not None:
                 with torch.no_grad():
                     new_module.weight.data = module.weight.data
                     if module.bias is not None:
                         new_module.bias.data = module.bias.data
 
+            logger.info(f"Replacing {full_module_name} with LoRALinear")
             setattr(model, name, new_module)
 
         elif isinstance(module, torch.nn.Embedding) and any(
             [m in full_module_name for m in lora_modules]
         ):
-            lora_params_emb = lora_params.copy()
-            lora_params_emb.pop("dropout", None)
-
             new_module = LoRAEmbedding(
                 num_embeddings=module.num_embeddings,
                 embedding_dim=module.embedding_dim,
@@ -109,13 +110,14 @@ def replace_with_lora(
                 max_norm=module.max_norm,
                 norm_type=module.norm_type,
                 sparse=module.sparse,
-                **lora_params_emb,
+                **lora_params,
             )
 
             if module.weight is not None:
                 with torch.no_grad():
                     new_module.weight.data = module.weight.data
 
+            logger.info(f" | > Replacing {full_module_name} with LoRAEmbedding")
             setattr(model, name, new_module)
 
         else:
@@ -243,16 +245,9 @@ def main(cfg: FairseqConfig) -> None:
         lora_modules = set(lora_config.get("target_modules", "").split(","))
         # assert there are target modules specified for LoRA
         assert len(lora_modules) != [""], "No target modules specified for LoRA"
-        saved_modules = set(lora_config.get("saved_modules", "").split(","))
-        # assert there are no common modules between saved_modules and lora_modules
-        assert len(lora_modules.intersection(saved_modules)) == 0, (
-            "lora_modules and saved_modules cannot have common modules. "
-            "Please remove the following modules from either target_modules or saved_modules: "
-            f"{lora_modules.intersection(saved_modules)}"
-        )
         lora_bias = lora_config.get("bias", "none")
-        replace_with_lora(model, lora_modules=lora_modules, lora_params=lora_params)
-        mark_only_lora_as_trainable(model, bias=lora_bias, saved_modules=saved_modules)
+        replace_with_lora(model, lora_modules, lora_params)
+        mark_only_lora_as_trainable(model, lora_bias)
     ### EXPERIMENTAL :: NOT TO BE USED UNTIL TESTED ###
 
     logger.info(
@@ -315,8 +310,8 @@ def main(cfg: FairseqConfig) -> None:
     # assign the teacher model (is present) to the trainer
     # we had to build the teacher model first before the student and trainer
     # to avoid over-writing the generator for beam-search of the student with that of the teacher
-    if (cfg.task._name == "translation_with_kd") and (
-        cfg.criterion._name == "label_smoothed_cross_entropy_with_kd"
+    if (cfg.task._name == "seq2seq_lm_distillation") and (
+        cfg.criterion._name == "seq2seq_lm_distillation"
     ):
         trainer.assign_teacher_model(teacher_model)
 
