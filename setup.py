@@ -10,8 +10,8 @@ import sys
 
 from setuptools import Extension, find_packages, setup
 
-if sys.version_info < (3, 6):
-    sys.exit("Sorry, Python >= 3.6 is required for fairseq.")
+if sys.version_info < (3, 8):
+    sys.exit("Sorry, Python >= 3.8 is required for fairseq.")
 
 
 def write_version_py():
@@ -183,12 +183,11 @@ def do_setup(package_data):
         classifiers=[
             "Intended Audience :: Science/Research",
             "License :: OSI Approved :: MIT License",
-            "Programming Language :: Python :: 3.6",
-            "Programming Language :: Python :: 3.7",
             "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
             "Programming Language :: Python :: 3.11",
+            "Programming Language :: Python :: 3.12",
             "Topic :: Scientific/Engineering :: Artificial Intelligence",
         ],
         long_description=readme,
@@ -196,7 +195,7 @@ def do_setup(package_data):
         setup_requires=[
             "cython",
             'numpy<1.20.0; python_version<"3.7"',
-            'numpy; python_version>="3.7"',
+            'numpy; python_version>="3.8"',
             "setuptools>=18.0",
         ],
         install_requires=[
@@ -205,13 +204,13 @@ def do_setup(package_data):
             "omegaconf",
             'dataclasses; python_version<"3.7"',
             "hydra-core>=1.3.2",
-            "numpy>=1.21.3",
+            "numpy>=2.0.0",
             "regex",
-            "sacrebleu>=1.4.12",
-            "torch>=1.12",
+            "sacrebleu>=2.4.2",
+            "torch>=2.0.1",
             "tqdm",
             "bitarray",
-            "torchaudio>=0.8.0",
+            "torchaudio>=2.0.1",
             "scikit-learn",
             "packaging",
             "rotary-embedding-torch>=0.6.4",
