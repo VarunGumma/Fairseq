@@ -25,15 +25,14 @@ except ImportError:
 # HACK: Double check your requirements before using this variant.
 
 
-class FastMultiheadAttention(MultiheadAttention):
-    """Fast Multi-headed attention
-    A Faster version of NativeMultiheadAttention that uses a kernelized implementation of scaled dot product attention.
-    """
+class FastGroupedQueryAttention(MultiheadAttention):
+    """Fast Grouped Query Attention"""
 
     def __init__(
         self,
         embed_dim,
         num_heads,
+        num_kv_heads,
         kdim=None,
         vdim=None,
         dropout=0.0,
@@ -50,6 +49,8 @@ class FastMultiheadAttention(MultiheadAttention):
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
+        self.num_kv_heads = num_kv_heads
+        self.q_per_kv = self.num_heads // self.num_kv_heads
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
@@ -73,7 +74,7 @@ class FastMultiheadAttention(MultiheadAttention):
 
         self.xpos = self.rope and is_decoder and rope_args.get("use_xpos", False)
 
-        # partial rotation in RoPE
+        # partial rotation works better than full rotation
         self.rotary_pos_embed = (
             RotaryEmbedding(
                 dim=self.head_dim // 2,
@@ -90,13 +91,19 @@ class FastMultiheadAttention(MultiheadAttention):
         ), "Self-attention requires query, key and value to be of the same size"
 
         self.k_proj = quant_noise(
-            nn.Linear(self.kdim, embed_dim, bias=bias), q_noise, qn_block_size
+            nn.Linear(self.kdim, self.num_kv_heads * self.head_dim, bias=bias),
+            q_noise,
+            qn_block_size,
         )
         self.v_proj = quant_noise(
-            nn.Linear(self.vdim, embed_dim, bias=bias), q_noise, qn_block_size
+            nn.Linear(self.vdim, self.num_kv_heads * self.head_dim, bias=bias),
+            q_noise,
+            qn_block_size,
         )
         self.q_proj = quant_noise(
-            nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
+            nn.Linear(embed_dim, embed_dim, bias=bias),
+            q_noise,
+            qn_block_size,
         )
         self.out_proj = quant_noise(
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
@@ -142,7 +149,6 @@ class FastMultiheadAttention(MultiheadAttention):
                 weights for each head. Implies *need_weights*. Default:
                 return the average attention weights over all heads.
         """
-
         tgt_len, bsz, embed_dim = query.size()
         src_len = tgt_len
 
@@ -203,31 +209,56 @@ class FastMultiheadAttention(MultiheadAttention):
                 key_padding_mask=key_padding_mask,
             )
 
-        q = rearrange(q, "t b (h d) -> (b h) t d", h=self.num_heads, d=self.head_dim)
+        q = rearrange(
+            q,
+            "t b (h nq d) -> (b h nq) t d",
+            nq=self.q_per_kv,
+            h=self.num_kv_heads,
+            d=self.head_dim,
+        )
+        # q shape: (bsz * self.num_heads, tgt_len, head_dim)
         kv_bsz = bsz  # need default value for scripting
         if k is not None:
             kv_bsz = k.size(1)
             k = rearrange(
                 k,
                 "t b (h d) -> (b h) t d",
-                h=self.num_heads,
+                h=self.num_kv_heads,
                 d=self.head_dim,
             )
+            # k shape: (bsz * self.num_kv_heads, src_len, head_dim)
         if v is not None:
             v = rearrange(
                 v,
                 "t b (h d) -> (b h) t d",
-                h=self.num_heads,
+                h=self.num_kv_heads,
                 d=self.head_dim,
+            )
+            # v shape: (bsz * self.num_kv_heads, src_len, head_dim)
+
+        if self.num_heads != self.num_kv_heads:
+            # self.num_heads == self.num_kv_heads * self.q_per_kv
+            k = rearrange(k, "(b h) t d -> b h 1 t d", h=self.num_kv_heads)
+            k = k.expand(bsz, self.num_kv_heads, self.q_per_kv, -1, self.head_dim)
+            k = rearrange(
+                k, "b h nq t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
+            )
+
+            v = rearrange(v, "(b h) t d -> b h 1 t d", h=self.num_kv_heads)
+            v = v.expand(bsz, self.num_kv_heads, self.q_per_kv, -1, self.head_dim)
+            v = rearrange(
+                v, "b h nq t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
             )
 
         if saved_state is not None:
-            # saved states are stored with shape (bsz, num_heads, seq_len, head_dim)
+            # saved states are stored with shape (bsz, num_kv_heads, q_per_kv, seq_len, head_dim)
             if "prev_key" in saved_state:
                 _prev_key = saved_state["prev_key"]
                 assert _prev_key is not None
                 kv_bsz = _prev_key.size(0)
-                prev_key = _prev_key.view(kv_bsz * self.num_heads, -1, self.head_dim)
+                prev_key = _prev_key.view(
+                    kv_bsz * self.num_kv_heads * self.q_per_kv, -1, self.head_dim
+                )
                 if static_kv:
                     k = prev_key
                 else:
@@ -239,7 +270,7 @@ class FastMultiheadAttention(MultiheadAttention):
                 assert _prev_value is not None
                 assert kv_bsz == _prev_value.size(0)
                 prev_value = _prev_value.view(
-                    kv_bsz * self.num_heads, -1, self.head_dim
+                    kv_bsz * self.num_kv_heads * self.q_per_kv, -1, self.head_dim
                 )
                 if static_kv:
                     v = prev_value
@@ -250,7 +281,7 @@ class FastMultiheadAttention(MultiheadAttention):
             if "prev_key_padding_mask" in saved_state:
                 prev_key_padding_mask = saved_state["prev_key_padding_mask"]
             assert k is not None and v is not None
-            key_padding_mask = FastMultiheadAttention._append_prev_key_padding_mask(
+            key_padding_mask = FastGroupedQueryAttention._append_prev_key_padding_mask(
                 key_padding_mask=key_padding_mask,
                 prev_key_padding_mask=prev_key_padding_mask,
                 batch_size=kv_bsz,
@@ -258,9 +289,11 @@ class FastMultiheadAttention(MultiheadAttention):
                 static_kv=static_kv,
             )
 
-            saved_state["prev_key"] = k.view(kv_bsz, self.num_heads, -1, self.head_dim)
+            saved_state["prev_key"] = k.view(
+                kv_bsz, self.num_heads, self.q_per_kv, -1, self.head_dim
+            )
             saved_state["prev_value"] = v.view(
-                kv_bsz, self.num_heads, -1, self.head_dim
+                kv_bsz, self.num_heads, self.q_per_kv, -1, self.head_dim
             )
             saved_state["prev_key_padding_mask"] = key_padding_mask
             # In this branch incremental_state is never None
@@ -271,8 +304,12 @@ class FastMultiheadAttention(MultiheadAttention):
         assert k.size(1) == src_len
 
         if self.rotary_pos_embed is not None:
-            q = rearrange(q, "(b h) t d -> b h t d", h=self.num_heads)
-            k = rearrange(k, "(b h) t d -> b h t d", h=self.num_heads)
+            q = rearrange(
+                q, "(b h nq) t d -> b h nq t d", h=self.num_kv_heads, nq=self.q_per_kv
+            )
+            k = rearrange(
+                k, "(b h nq) t d -> b h nq t d", h=self.num_kv_heads, nq=self.q_per_kv
+            )
 
             if saved_state is not None:
                 q, k = self.rotary_pos_embed.rotate_queries_with_cached_keys(q, k)
@@ -283,8 +320,12 @@ class FastMultiheadAttention(MultiheadAttention):
                 else:
                     q, k = self.rotary_pos_embed.rotate_queries_and_keys(q, k)
 
-            q = rearrange(q, "b h t d -> (b h) t d", h=self.num_heads)
-            k = rearrange(k, "b h t d -> (b h) t d", h=self.num_heads)
+            q = rearrange(
+                q, "b h nq t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
+            )
+            k = rearrange(
+                k, "b h nq t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
+            )
 
         # This is part of a workaround to get around fork/join parallelism
         # not supporting Optional types.
@@ -341,7 +382,11 @@ class FastMultiheadAttention(MultiheadAttention):
         )
 
         attn = rearrange(
-            attn, "(b h) t d -> t b (h d)", h=self.num_heads, d=self.head_dim
+            attn,
+            "(b h nq) t d -> t b (h nq d)",
+            h=self.num_kv_heads,
+            nq=self.q_per_kv,
+            d=self.head_dim,
         )
         attn = self.out_proj(attn)
         return attn, None

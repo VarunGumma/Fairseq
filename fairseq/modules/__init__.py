@@ -34,6 +34,7 @@ from .lstm_cell_with_zoneout import LSTMCellWithZoneOut
 from .mlp import MLP, GLU
 from .multihead_attention import MultiheadAttention
 from .fast_multihead_attention import FastMultiheadAttention
+from .fast_grouped_query_attention import FastGroupedQueryAttention
 from .positional_embedding import PositionalEmbedding
 from .rms_norm import RMSNorm
 from .same_pad import SamePad, SamePad2d

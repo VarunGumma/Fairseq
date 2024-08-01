@@ -51,6 +51,9 @@ class EncDecBaseConfig(FairseqDataclass):
     attention_heads: int = field(
         default=8, metadata={"help": "number of attention heads"}
     )
+    kv_attention_heads: Optional[int] = field(
+        default=None, metadata={"help": "number of attention heads for key and value"}
+    )
     normalize_before: bool = field(
         default=False, metadata={"help": "apply layernorm before each block"}
     )
@@ -87,10 +90,6 @@ class DecoderConfig(EncDecBaseConfig):
         metadata={
             "help": "decoder output dimension (extra linear layer if different from decoder embed dim)"
         },
-    )
-    output_activation_fn: Optional[str] = field(
-        default=None,
-        metadata={"help": "activation for the decoder output layer mentioned above"},
     )
 
     def __post_init__(self):
@@ -235,7 +234,7 @@ class TransformerConfig(FairseqDataclass):
     cross_self_attention: bool = field(
         default=False, metadata={"help": "perform cross+self-attention"}
     )
-    attn_implementation: ChoiceEnum(["fast", "fairseq"]) = field(
+    attn_implementation: ChoiceEnum(["fast", "fast_gqa", "fairseq"]) = field(
         default="fairseq",
         metadata={"help": "Mainly added for RoPE/LoRA and efficiency"},
     )
@@ -245,13 +244,13 @@ class TransformerConfig(FairseqDataclass):
             "help": "LoRA arguments (rank, alpha, dropout, target_modules, rank_scaled)"
         },
     )
-    use_rope: Optional[bool] = field(
-        default=False,
-        metadata={"help": "use Rotary Positional Embedding (RoPE) in self-attention layers"},
-    )
-    use_alibi: Optional[bool] = field(
+    rope_args: Optional[str] = field(
         default=None,
-        metadata={"help": "use ALiBi positional encoding (symmetrical)"},
+        metadata={"help": "RoPE arguments (theta, use_xpos, xpos_scale_base)"}
+    )
+    alibi_args: Optional[str] = field(
+        default=None,
+        metadata={"help": "ALiBi arguments (type)"}
     )
 
     # args for Training with Quantization Noise for Extreme Model Compression ({Fan*, Stock*} et al., 2020)

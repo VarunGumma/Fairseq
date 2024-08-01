@@ -19,6 +19,7 @@ from fairseq.modules import (
     GLU,
     MultiheadAttention,
     FastMultiheadAttention,
+    FastGroupedQueryAttention,
 )
 
 # This module does not support `scale_attn`, `scale_heads`, `scale_fc`, `scale_resids` anymore
@@ -48,7 +49,7 @@ class TransformerEncoderLayerBase(nn.Module):
         self.quant_noise_block_size = cfg.quant_noise.pq_block_size
         self.attn_implementation = getattr(cfg, "attn_implementation", None)
         self.self_attn = self.build_self_attention(self.embed_dim, cfg)
-        self.self_attn_layer_norm = self.normalization(
+        self.self_attn_layer_norm = self.build_normalization(
             self.embed_dim, rms=cfg.encoder.use_rmsnorm
         )
 
@@ -80,7 +81,7 @@ class TransformerEncoderLayerBase(nn.Module):
                 self.embed_dim, cfg.encoder.ffn_embed_dim, cfg.activation_fn
             )
 
-        self.final_layer_norm = self.normalization(
+        self.final_layer_norm = self.build_normalization(
             self.embed_dim, rms=cfg.encoder.use_rmsnorm
         )
 
@@ -167,14 +168,25 @@ class TransformerEncoderLayerBase(nn.Module):
                 self_attention=True,
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
-                use_rope=getattr(cfg, "use_rope", False),
+                rope_args=getattr(cfg, "rope_args", None)
+            )
+        elif self.attn_implementation == "fast_gqa":
+            return FastGroupedQueryAttention(
+                embed_dim,
+                cfg.encoder.attention_heads,
+                cfg.encoder.kv_attention_heads,
+                dropout=cfg.attention_dropout,
+                self_attention=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                rope_args=getattr(cfg, "rope_args", None)
             )
         else:
             raise NotImplementedError(
                 f"Unknown attention implementation: {self.attn_implementation}"
             )
 
-    def normalization(self, dim, rms=False):
+    def build_normalization(self, dim, rms=False):
         return (
             LayerNorm(dim, export=self.cfg.export)
             if not rms
@@ -334,7 +346,7 @@ class TransformerDecoderLayerBase(nn.Module):
         )
         self.normalize_before = cfg.decoder.normalize_before
 
-        self.self_attn_layer_norm = self.normalization(
+        self.self_attn_layer_norm = self.build_normalization(
             self.embed_dim, rms=cfg.decoder.use_rmsnorm
         )
 
@@ -343,7 +355,7 @@ class TransformerDecoderLayerBase(nn.Module):
             self.encoder_attn_layer_norm = None
         else:
             self.encoder_attn = self.build_encoder_attention(self.embed_dim, cfg)
-            self.encoder_attn_layer_norm = self.normalization(
+            self.encoder_attn_layer_norm = self.build_normalization(
                 self.embed_dim, rms=cfg.decoder.use_rmsnorm
             )
 
@@ -368,7 +380,7 @@ class TransformerDecoderLayerBase(nn.Module):
                 self.embed_dim, cfg.decoder.ffn_embed_dim, cfg.activation_fn
             )
 
-        self.final_layer_norm = self.normalization(
+        self.final_layer_norm = self.build_normalization(
             self.embed_dim, rms=cfg.decoder.use_rmsnorm
         )
 
@@ -410,7 +422,20 @@ class TransformerDecoderLayerBase(nn.Module):
                 is_decoder=True,
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
-                use_rope=getattr(cfg, "use_rope", False),
+                rope_args=getattr(cfg, "rope_args", None)
+            )
+        elif self.attn_implementation == "fast_gqa":
+            return FastGroupedQueryAttention(
+                embed_dim,
+                cfg.decoder.attention_heads,
+                cfg.decoder.kv_attention_heads,
+                dropout=cfg.attention_dropout,
+                add_bias_kv=add_bias_kv,
+                add_zero_attn=add_zero_attn,
+                self_attention=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                rope_args=getattr(cfg, "rope_args", None)
             )
         else:
             raise NotImplementedError(
@@ -442,6 +467,18 @@ class TransformerDecoderLayerBase(nn.Module):
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
             )
+        elif self.attn_implementation == "fast_gqa":
+            return FastGroupedQueryAttention(
+                embed_dim,
+                cfg.decoder.attention_heads,
+                cfg.decoder.kv_attention_heads,
+                kdim=cfg.encoder.embed_dim,
+                vdim=cfg.encoder.embed_dim,
+                dropout=cfg.attention_dropout,
+                encoder_decoder_attention=True,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+            )
         else:
             raise NotImplementedError(
                 f"Unknown attention implementation: {self.attn_implementation}"
@@ -453,7 +490,7 @@ class TransformerDecoderLayerBase(nn.Module):
     def residual_connection(self, x, residual):
         return residual + x
 
-    def normalization(self, dim, rms=False):
+    def build_normalization(self, dim, rms=False):
         return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
 
     def forward(

@@ -206,6 +206,8 @@ def main(cfg: FairseqConfig):
     else:
         max_positions = eval(cfg.interactive.force_override_max_positions)
 
+    logger.info("Max positions: {}".format(max_positions))
+
     if cfg.generation.constraints:
         logger.warning(
             "NOTE: Constrained decoding currently assumes a shared subword vocabulary."

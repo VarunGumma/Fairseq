@@ -5,6 +5,7 @@
 import math
 from typing import Dict, List, Optional
 
+import json
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -79,7 +80,7 @@ class TransformerEncoderBase(FairseqEncoder):
         )
 
         self.layernorm_embedding = (
-            self.normalization(embed_dim, rms=cfg.encoder.use_rmsnorm)
+            self.build_normalization(embed_dim, rms=cfg.encoder.use_rmsnorm)
             if cfg.layernorm_embedding
             else None
         )
@@ -113,24 +114,22 @@ class TransformerEncoderBase(FairseqEncoder):
         self.num_layers = len(self.layers)
 
         self.layer_norm = (
-            self.normalization(embed_dim, rms=cfg.encoder.use_rmsnorm)
+            self.build_normalization(embed_dim, rms=cfg.encoder.use_rmsnorm)
             if cfg.encoder.normalize_before
             else None
         )
 
-        if cfg.use_alibi:
-            assert (
-                self.embed_positions is None
-            ), "ALiBi shouldn't be used with positional embedding"
+        if getattr(cfg, "alibi_args", None) is not None:
+            alibi_args = json.loads(cfg.alibi_args)
             self.alibi = utils.alibi(
                 cfg.encoder.attention_heads,
                 self.max_source_positions,
-                asymmetrical=False,
+                asymmetrical=(alibi_args["type"] == "asymmetrical"),
             )
         else:
             self.alibi = None
 
-    def normalization(self, dim, rms=False):
+    def build_normalization(self, dim, rms=False):
         return (
             LayerNorm(dim, export=self.cfg.export)
             if not rms

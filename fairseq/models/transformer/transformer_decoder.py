@@ -109,7 +109,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             else None
         )
         self.layernorm_embedding = (
-            self.normalization(self.embed_dim, rms=cfg.decoder.use_rmsnorm)
+            self.build_normalization(self.embed_dim, rms=cfg.decoder.use_rmsnorm)
             if cfg.layernorm_embedding
             else None
         )
@@ -139,7 +139,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         self.num_layers = len(self.layers)
 
         if cfg.decoder.normalize_before and not cfg.no_decoder_final_norm:
-            self.layer_norm = self.normalization(
+            self.layer_norm = self.build_normalization(
                 self.embed_dim, rms=cfg.decoder.use_rmsnorm
             )
         else:
@@ -151,17 +151,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             else None
         )
 
-        if cfg.decoder.output_activation_fn is not None:
-            self.project_out_activation_fn = utils.get_activation_fn(
-                cfg.decoder.output_activation_fn
-            )
-        else:
-            self.project_out_activation_fn = None
-
-        if cfg.use_alibi:
-            assert (
-                self.embed_positions is None
-            ), "ALiBi shouldn't be used with positional embedding"
+        if getattr(cfg, "alibi_args", None) is not None:
             self.alibi = utils.alibi(
                 cfg.decoder.attention_heads, self.max_target_positions
             )
@@ -173,7 +163,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         if self.output_projection is None:
             self.build_output_projection(cfg, dictionary, embed_tokens)
 
-    def normalization(self, dim, rms=False):
+    def build_normalization(self, dim, rms=False):
         return (
             LayerNorm(dim, export=self.cfg.export)
             if not rms
@@ -192,10 +182,6 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
                 tie_proj=cfg.tie_adaptive_proj,
             )
         elif self.share_input_output_embed:
-            if self.cfg.decoder_factorized_embed_dim is not None:
-                raise ValueError(
-                    "--share-decoder-input-output-embed is not compatible with factorized embeddings"
-                )
             self.output_projection = nn.Linear(
                 self.embed_tokens.weight.shape[1],
                 self.embed_tokens.weight.shape[0],
