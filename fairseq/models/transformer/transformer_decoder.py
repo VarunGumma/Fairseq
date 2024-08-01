@@ -256,8 +256,6 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         )
 
         if not features_only:
-            if self.project_out_activation_fn is not None:
-                x = self.project_out_activation_fn(x)
             x = self.output_layer(x)
         return x, extra
 
