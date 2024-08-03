@@ -154,7 +154,6 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
                 embed_dim,
                 padding_idx=padding_idx,
                 hid_dim=factorized_embed_dim,
-                activation=cfg.factorized_embed_activation_fn,
             )
         else:
             emb = Embedding(num_embeddings, embed_dim, padding_idx=padding_idx)

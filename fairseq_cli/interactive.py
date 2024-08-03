@@ -157,20 +157,23 @@ def main(cfg: FairseqConfig):
     src_dict = task.source_dictionary
     tgt_dict = task.target_dictionary
 
-    compile_mode = getattr(cfg, "torch_compile", None)
+    compile_mode = getattr(cfg.common_eval, "torch_compile", None)
 
     # Optimize ensemble for generation
     for model in models:
         if model is None:
             continue
         if cfg.common.fp16:
-            model.half()
+            model = model.half()
+        if cfg.common.bf16:
+            model = model.to(torch.bfloat16)
         if use_cuda and not cfg.distributed_training.pipeline_model_parallel:
-            model.cuda()
+            model = model.cuda()
+
         model.prepare_for_inference_(cfg)
 
         if compile_mode is not None:
-            model = torch.compile(model, model=compile_mode)
+            model = torch.compile(model, mode=compile_mode)
 
         model.eval()
 
@@ -199,12 +202,9 @@ def main(cfg: FairseqConfig):
     # (None if no unknown word replacement, empty if no path to align dictionary)
     align_dict = utils.load_align_dict(cfg.generation.replace_unk)
 
-    if not getattr(cfg.interactive, "force_override_max_positions", False):
-        max_positions = utils.resolve_max_positions(
-            task.max_positions(), *[model.max_positions() for model in models]
-        )
-    else:
-        max_positions = eval(cfg.interactive.force_override_max_positions)
+    max_positions = utils.resolve_max_positions(
+        task.max_positions(), *[model.max_positions() for model in models]
+    )
 
     logger.info("Max positions: {}".format(max_positions))
 

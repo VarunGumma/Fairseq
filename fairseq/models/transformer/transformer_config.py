@@ -120,20 +120,6 @@ class QuantNoiseConfig(FairseqDataclass):
 
 @dataclass
 class TransformerConfig(FairseqDataclass):
-    ### EXPERIMENTAL :: NOT TO BE USED UNTIL TESTED ###
-    adapter_activation_fn: ChoiceEnum(utils.get_available_activation_fns()) = field(
-        default="relu", metadata={"help": "activation function for adapters"}
-    )
-    factorized_embed_activation_fn: ChoiceEnum(utils.get_available_activation_fns()) = (
-        field(
-            default="linear",
-            metadata={
-                "help": "activation function to use for the factorized embedding"
-            },
-        )
-    )
-    ### EXPERIMENTAL :: NOT TO BE USED UNTIL TESTED ###
-
     activation_fn: ChoiceEnum(utils.get_available_activation_fns()) = field(
         default="relu",
         metadata={"help": "activation function to use"},

@@ -1070,6 +1070,12 @@ class CommonEvalConfig(FairseqDataclass):
     results_path: Optional[str] = field(
         default=None, metadata={"help": "path to save eval results (optional)"}
     )
+    torch_compile: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "compile PyTorch model for faster execution",
+        },
+    )
 
 
 @dataclass
@@ -1111,18 +1117,6 @@ class InteractiveConfig(FairseqDataclass):
     input: str = field(
         default="-",
         metadata={"help": "file to read from; use - for stdin"},
-    )
-    torch_compile: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "compile PyTorch model for faster execution",
-        },
-    )
-    force_override_max_positions: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "force override the max_positions specified in the checkpoint. Should be a tuple of integers, ex. (2048, 2048), in the form of a string."
-        },
     )
 
 

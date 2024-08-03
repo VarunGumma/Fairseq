@@ -123,15 +123,23 @@ def _main(cfg: DictConfig, output_file):
     else:
         lms = [None]
 
+    compile_mode = getattr(cfg.common_eval, "torch_compile", None)
+
     # Optimize ensemble for generation
     for model in chain(models, lms):
         if model is None:
             continue
         if cfg.common.fp16:
-            model.half()
+            model = model.half()
+        if cfg.common.bf16:
+            model = model.to(dtype=torch.bfloat16)
         if use_cuda and not cfg.distributed_training.pipeline_model_parallel:
-            model.cuda()
+            model = model.cuda()
+
         model.prepare_for_inference_(cfg)
+
+        if compile_mode is not None:
+            model = torch.compile(model, mode=compile_mode)
 
         model.eval()
 
