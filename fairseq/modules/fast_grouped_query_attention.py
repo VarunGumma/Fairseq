@@ -152,6 +152,8 @@ class FastGroupedQueryAttention(MultiheadAttention):
         tgt_len, bsz, embed_dim = query.size()
         src_len = tgt_len
 
+        dropout_p = self.dropout_p if self.training else 0
+
         assert list(query.size()) == [tgt_len, bsz, embed_dim]
         if key is not None:
             src_len, key_bsz, _ = key.size()
@@ -378,7 +380,7 @@ class FastGroupedQueryAttention(MultiheadAttention):
             value=v,
             is_causal=False,
             attn_mask=combined_mask,
-            dropout_p=self.dropout_p,
+            dropout_p=dropout_p,
         )
 
         attn = rearrange(
