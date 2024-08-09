@@ -46,6 +46,7 @@ class FastGroupedQueryAttention(MultiheadAttention):
         qn_block_size=8,
         is_decoder=False,
         rope_args=None,
+        fused_qkv=False,
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
@@ -59,6 +60,8 @@ class FastGroupedQueryAttention(MultiheadAttention):
         self.num_heads = num_heads
         self.dropout_p = dropout
 
+        self.fused_qkv = fused_qkv and self.qkv_same_dim and self_attention
+
         self.head_dim = embed_dim // num_heads
         assert (
             self.head_dim * num_heads == self.embed_dim
@@ -68,6 +71,7 @@ class FastGroupedQueryAttention(MultiheadAttention):
         self.encoder_decoder_attention = encoder_decoder_attention
 
         self.rope = rope_args is not None and self.self_attention
+        self._new_kv_dim = self.num_kv_heads * self.head_dim
 
         if self.rope:
             rope_args = json.loads(rope_args)
@@ -90,21 +94,32 @@ class FastGroupedQueryAttention(MultiheadAttention):
             not self.self_attention or self.qkv_same_dim
         ), "Self-attention requires query, key and value to be of the same size"
 
-        self.k_proj = quant_noise(
-            nn.Linear(self.kdim, self.num_kv_heads * self.head_dim, bias=bias),
-            q_noise,
-            qn_block_size,
-        )
-        self.v_proj = quant_noise(
-            nn.Linear(self.vdim, self.num_kv_heads * self.head_dim, bias=bias),
-            q_noise,
-            qn_block_size,
-        )
-        self.q_proj = quant_noise(
-            nn.Linear(embed_dim, embed_dim, bias=bias),
-            q_noise,
-            qn_block_size,
-        )
+        if not self.fused_qkv:
+            self.k_proj = quant_noise(
+                nn.Linear(self.kdim, self._new_kv_dim, bias=bias),
+                q_noise,
+                qn_block_size,
+            )
+            self.v_proj = quant_noise(
+                nn.Linear(self.vdim, self._new_kv_dim, bias=bias),
+                q_noise,
+                qn_block_size,
+            )
+            self.q_proj = quant_noise(
+                nn.Linear(embed_dim, embed_dim, bias=bias),
+                q_noise,
+                qn_block_size,
+            )
+        else:
+            fused_dim = embed_dim + (2 * self._new_kv_dim)
+            self.split_dims = [embed_dim, self._new_kv_dim, self._new_kv_dim]
+
+            self.qkv_proj = quant_noise(
+                nn.Linear(embed_dim, fused_dim, bias=bias),
+                q_noise,
+                qn_block_size,
+            )
+
         self.out_proj = quant_noise(
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
         )
@@ -173,9 +188,12 @@ class FastGroupedQueryAttention(MultiheadAttention):
             saved_state = None
 
         if self.self_attention:
-            q = self.q_proj(query)
-            k = self.k_proj(query)
-            v = self.v_proj(query)
+            if not self.fused_qkv:
+                q = self.q_proj(query)
+                k = self.k_proj(query)
+                v = self.v_proj(query)
+            else:
+                q, k, v = self.qkv_proj(query).split(self.split_dims, dim=-1)
         elif self.encoder_decoder_attention:
             # encoder-decoder attention
             q = self.q_proj(query)

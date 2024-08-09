@@ -3,10 +3,6 @@
   <br />
   <br />
   <a href="https://github.com/pytorch/fairseq/blob/main/LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
-  <a href="https://github.com/pytorch/fairseq/releases"><img alt="Latest Release" src="https://img.shields.io/github/release/pytorch/fairseq.svg" /></a>
-  <a href="https://github.com/pytorch/fairseq/actions?query=workflow:build"><img alt="Build Status" src="https://github.com/pytorch/fairseq/workflows/build/badge.svg" /></a>
-  <a href="https://fairseq.readthedocs.io/en/latest/?badge=latest"><img alt="Documentation Status" src="https://readthedocs.org/projects/fairseq/badge/?version=latest" /></a>
-  <a href="https://app.circleci.com/pipelines/github/facebookresearch/fairseq/"><img alt="CicleCI Status" src="https://circleci.com/gh/facebookresearch/fairseq.svg?style=shield" /></a>
 </p>
 
 --------------------------------------------------------------------------------
@@ -17,7 +13,7 @@ modeling and other text generation tasks.
 
 
 # Usage
-This clone of fairseq supports `Knowledge Distillation`, `Recurrent Stacking`, `FlashAttention2`, `LoRA` `RoPE`, and `ALiBi`, for the `Transformer` model and the `translation` task. You can add the following flags to `fairseq-train`/`fairseq-interactive`/`fairseq-generate` to use them:
+This clone of fairseq supports `Knowledge Distillation`, `Recurrent Stacking`, `LoRA` `RoPE`, and `ALiBi`, for the `Transformer` model and the `translation` task. You can add the following flags to `fairseq-train`/`fairseq-interactive`/`fairseq-generate` to use them:
 
 | **Name and Citation** | **Description** | **Flags to Activate** | **Source** |
 |-----------------------|-----------------------|-----------------------|------------|
@@ -30,11 +26,12 @@ This clone of fairseq supports `Knowledge Distillation`, `Recurrent Stacking`, `
 | **Attention with Linear Biases (ALiBi)** ([Press _et al_.](https://openreview.net/forum?id=R8sQPpGCv0)) | Simple and efficient position method that biases query-key attention scores with a penalty proportional to their distance | `--alibi-args '{"type": "symmetrical"}' --no-token-positional-embeddings --load-checkpoint-liberally` | [ALiBi Implementation](https://github.com/EIFY/fairseq) |
 | **Factorized Embedding Parameterization** ([Lan _et al_.](https://openreview.net/forum?id=nZeVKeeFYf9)) | Parameterizes large embeddings by adding an intermediate bottleneck layer | `--encoder-factorized-embed-dim 128 --decoder-factorized-embed-dim 128` | - |
 | **Sanity Validation Steps** | Runs a full pass over the validation set at the beginning of training | `--run-sanity-validation-steps` | - |
-| **Efficient Multihead Attention (MHA)** | A [torch-functional variant](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html) of _MultiHeadAttention_ with a efficient context manager | `--attn-implementation fast`. By default, the value is `fairseq` | - |
-| **Grouped Query Attention (GQA)** [(Ainslie _et al._)](https://aclanthology.org/2023.emnlp-main.298/) | Clusters queries into groups, allowing for more efficient computation and enhanced scalability in processing large sets of queries within transformer models. | `--attn-implementation fast_gqa` | [GQA Implementation](https://pytorch.org/torchtune/stable/_modules/torchtune/modules/attention.html) |
+| **Efficient Multihead Attention (MHA)** | A [torch-functional variant](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html) of _MultiHeadAttention_ | `--attn-implementation fast`. By default, the value is `fairseq` | - |
+| **Grouped Query Attention (GQA)** ([Ainslie _et al._](https://aclanthology.org/2023.emnlp-main.298/)) | Clusters queries into groups, allowing for more efficient computation and enhanced scalability in processing large sets of queries within transformer models. | `--attn-implementation fast_gqa` | [GQA Implementation](https://pytorch.org/torchtune/stable/_modules/torchtune/modules/attention.html) |
 
 
 ## Upcoming features ($\alpha$-testing)
+* `fused` version of **MHA** (`fast_fused`) and **GQA** (`fast_gqa_fused`) for faster computation. Note, this cannot be used with models that were trained with the _un-fused_ version.
 * `--bf16` has been decoupled from `--tpu`, and can be used independently to train the model with `bfloat16`.
 * `--torch-compile $mode` can be used in the `interactive` and `generate` methods for faster inference. 
 

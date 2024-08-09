@@ -45,7 +45,8 @@ class EncDecBaseConfig(FairseqDataclass):
         },
     )
     ffn_embed_dim: int = field(
-        default=2048, metadata={"help": "embedding dimension for FFN, also works for GLU"}
+        default=2048,
+        metadata={"help": "embedding dimension for FFN, also works for GLU"},
     )
     layers: int = field(default=6, metadata={"help": "number of layers"})
     attention_heads: int = field(
@@ -220,7 +221,9 @@ class TransformerConfig(FairseqDataclass):
     cross_self_attention: bool = field(
         default=False, metadata={"help": "perform cross+self-attention"}
     )
-    attn_implementation: ChoiceEnum(["fast", "fast_gqa", "fairseq"]) = field(
+    attn_implementation: ChoiceEnum(
+        ["fast", "fast_fused", "fast_gqa", "fast_gqa_fused", "fairseq"]
+    ) = field(
         default="fairseq",
         metadata={"help": "Mainly added for RoPE/LoRA and efficiency"},
     )
@@ -232,11 +235,10 @@ class TransformerConfig(FairseqDataclass):
     )
     rope_args: Optional[str] = field(
         default=None,
-        metadata={"help": "RoPE arguments (theta, use_xpos, xpos_scale_base)"}
+        metadata={"help": "RoPE arguments (theta, use_xpos, xpos_scale_base)"},
     )
     alibi_args: Optional[str] = field(
-        default=None,
-        metadata={"help": "ALiBi arguments (type)"}
+        default=None, metadata={"help": "ALiBi arguments (type)"}
     )
 
     # args for Training with Quantization Noise for Extreme Model Compression ({Fan*, Stock*} et al., 2020)

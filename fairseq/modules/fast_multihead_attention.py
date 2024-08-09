@@ -47,6 +47,7 @@ class FastMultiheadAttention(MultiheadAttention):
         qn_block_size=8,
         is_decoder=False,
         rope_args=None,
+        fused_qkv=False
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
@@ -57,6 +58,8 @@ class FastMultiheadAttention(MultiheadAttention):
         self.is_decoder = is_decoder
         self.num_heads = num_heads
         self.dropout_p = dropout
+
+        self.fused_qkv = fused_qkv and self.qkv_same_dim and self_attention
 
         self.head_dim = embed_dim // num_heads
         assert (
@@ -89,15 +92,21 @@ class FastMultiheadAttention(MultiheadAttention):
             not self.self_attention or self.qkv_same_dim
         ), "Self-attention requires query, key and value to be of the same size"
 
-        self.k_proj = quant_noise(
-            nn.Linear(self.kdim, embed_dim, bias=bias), q_noise, qn_block_size
-        )
-        self.v_proj = quant_noise(
-            nn.Linear(self.vdim, embed_dim, bias=bias), q_noise, qn_block_size
-        )
-        self.q_proj = quant_noise(
-            nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
-        )
+        if not self.fused_qkv:
+            self.k_proj = quant_noise(
+                nn.Linear(self.kdim, embed_dim, bias=bias), q_noise, qn_block_size
+            )
+            self.v_proj = quant_noise(
+                nn.Linear(self.vdim, embed_dim, bias=bias), q_noise, qn_block_size
+            )
+            self.q_proj = quant_noise(
+                nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
+            )
+        else:
+            self.qkv_proj = quant_noise(
+                nn.Linear(embed_dim, 3 * embed_dim, bias=bias), q_noise, qn_block_size
+            )
+
         self.out_proj = quant_noise(
             nn.Linear(embed_dim, embed_dim, bias=bias), q_noise, qn_block_size
         )
@@ -167,9 +176,12 @@ class FastMultiheadAttention(MultiheadAttention):
             saved_state = None
 
         if self.self_attention:
-            q = self.q_proj(query)
-            k = self.k_proj(query)
-            v = self.v_proj(query)
+            if not self.fused_qkv:
+                q = self.q_proj(query)
+                k = self.k_proj(query)
+                v = self.v_proj(query)
+            else:
+                q, k, v = self.qkv_proj(query).chunk(3, dim=-1)
         elif self.encoder_decoder_attention:
             # encoder-decoder attention
             q = self.q_proj(query)
