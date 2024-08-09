@@ -189,9 +189,7 @@ class FastGroupedQueryAttention(MultiheadAttention):
 
         if self.self_attention:
             if not self.fused_qkv:
-                q = self.q_proj(query)
-                k = self.k_proj(query)
-                v = self.v_proj(query)
+                q, k, v = self.q_proj(query), self.k_proj(query), self.v_proj(query)
             else:
                 q, k, v = self.qkv_proj(query).split(self.split_dims, dim=-1)
         elif self.encoder_decoder_attention:

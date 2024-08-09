@@ -25,6 +25,7 @@ class MLP(nn.Module):
 # Gated Linear Unit as proposed by Noam Shazeer in `GLU Variants Improve Transformer`
 # COPIED FROM: https://github.com/huggingface/transformers/blob/main/src/transformers/models/phi3/modeling_phi3.py
 
+
 # intermediate_features: --encoder-ffn-embed-dim, --decoder-ffn-embed-dim
 # act_fn: --activation-fn
 # usually, bias is set to False for GLU
@@ -38,7 +39,7 @@ class GLU(nn.Module):
         self.act_fn = utils.get_activation_fn(activation_fn)
         # this is a fused implementation of the two linear layers
         self.up_gate_proj = nn.Linear(
-            self.in_features, self.intermediate_features * 2, bias=bias
+            self.in_features, 2 * self.intermediate_features, bias=bias
         )
         self.down_proj = nn.Linear(
             self.intermediate_features, self.in_features, bias=bias

@@ -47,7 +47,7 @@ class FastMultiheadAttention(MultiheadAttention):
         qn_block_size=8,
         is_decoder=False,
         rope_args=None,
-        fused_qkv=False
+        fused_qkv=False,
     ):
         super().__init__(embed_dim, num_heads, dictionary=dictionary)
         self.embed_dim = embed_dim
@@ -177,9 +177,7 @@ class FastMultiheadAttention(MultiheadAttention):
 
         if self.self_attention:
             if not self.fused_qkv:
-                q = self.q_proj(query)
-                k = self.k_proj(query)
-                v = self.v_proj(query)
+                q, k, v = self.q_proj(query), self.k_proj(query), self.v_proj(query)
             else:
                 q, k, v = self.qkv_proj(query).chunk(3, dim=-1)
         elif self.encoder_decoder_attention:
@@ -351,7 +349,7 @@ class FastMultiheadAttention(MultiheadAttention):
             value=v,
             is_causal=False,
             attn_mask=combined_mask,
-            dropout_p=dropout_p
+            dropout_p=dropout_p,
         )
 
         attn = rearrange(
