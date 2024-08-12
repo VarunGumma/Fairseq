@@ -103,6 +103,7 @@ class MultiheadAttention(FairseqIncrementalDecoder):
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
         self.num_heads = num_heads
+        self.dropout_p = dropout
         self.dropout_module = FairseqDropout(
             dropout, module_name=self.__class__.__name__
         )
