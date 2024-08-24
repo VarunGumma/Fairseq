@@ -150,7 +150,35 @@ class TransformerEncoderLayerBase(nn.Module):
         self.fc2.bias = torch.nn.Parameter(new_fc2_bias)
 
     def build_self_attention(self, embed_dim, cfg):
-        if self.attn_implementation == "fairseq":
+        is_fused = self.attn_implementation.endswith("fused")
+
+        if self.attn_implementation.startswith("fast"):
+            return FastMultiheadAttention(
+                embed_dim,
+                cfg.encoder.attention_heads,
+                dropout=cfg.attention_dropout,
+                self_attention=True,
+                fused_qkv=is_fused,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                rope_args=getattr(cfg, "rope_args", None),
+            )
+        elif (
+            self.attn_implementation.startswith("fast_gqa")
+            and getattr(cfg.encoder, "kv_attention_heads", None) is not None
+        ):
+            return FastGroupedQueryAttention(
+                embed_dim,
+                cfg.encoder.attention_heads,
+                cfg.encoder.kv_attention_heads,
+                dropout=cfg.attention_dropout,
+                self_attention=True,
+                fused_qkv=is_fused,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                rope_args=getattr(cfg, "rope_args", None),
+            )
+        else:
             return MultiheadAttention(
                 embed_dim,
                 cfg.encoder.attention_heads,
@@ -159,33 +187,6 @@ class TransformerEncoderLayerBase(nn.Module):
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
                 xformers_att_config=cfg.encoder.xformers_att_config,
-            )
-        elif self.attn_implementation == "fast" or self.attn_implementation == "fast_fused":
-            return FastMultiheadAttention(
-                embed_dim,
-                cfg.encoder.attention_heads,
-                dropout=cfg.attention_dropout,
-                self_attention=True,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-                rope_args=getattr(cfg, "rope_args", None),
-                fused_qkv=(self.attn_implementation == "fast_fused")
-            )
-        elif self.attn_implementation == "fast_gqa" or self.attn_implementation == "fast_gqa_fused":
-            return FastGroupedQueryAttention(
-                embed_dim,
-                cfg.encoder.attention_heads,
-                cfg.encoder.kv_attention_heads,
-                dropout=cfg.attention_dropout,
-                self_attention=True,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-                rope_args=getattr(cfg, "rope_args", None),
-                fused_qkv=(self.attn_implementation == "fast_gqa_fused")
-            )
-        else:
-            raise NotImplementedError(
-                f"Unknown attention implementation: {self.attn_implementation}"
             )
 
     def build_normalization(self, dim, rms=False):
@@ -401,7 +402,41 @@ class TransformerDecoderLayerBase(nn.Module):
     def build_self_attention(
         self, embed_dim, cfg, add_bias_kv=False, add_zero_attn=False
     ):
-        if self.attn_implementation == "fairseq":
+        is_fused = self.attn_implementation.endswith("fused")
+
+        if self.attn_implementation.startswith("fast"):
+            return FastMultiheadAttention(
+                embed_dim,
+                cfg.decoder.attention_heads,
+                dropout=cfg.attention_dropout,
+                add_bias_kv=add_bias_kv,
+                add_zero_attn=add_zero_attn,
+                self_attention=True,
+                is_decoder=True,
+                fused_qkv=is_fused,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                rope_args=getattr(cfg, "rope_args", None),
+            )
+        elif (
+            self.attn_implementation.startswith("fast_gqa")
+            and getattr(cfg.decoder, "kv_attention_heads", None) is not None
+        ):
+            return FastGroupedQueryAttention(
+                embed_dim,
+                cfg.decoder.attention_heads,
+                cfg.decoder.kv_attention_heads,
+                dropout=cfg.attention_dropout,
+                add_bias_kv=add_bias_kv,
+                add_zero_attn=add_zero_attn,
+                self_attention=True,
+                is_decoder=True,
+                fused_qkv=is_fused,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                rope_args=getattr(cfg, "rope_args", None),
+            )
+        else:
             return MultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
@@ -413,42 +448,39 @@ class TransformerDecoderLayerBase(nn.Module):
                 qn_block_size=self.quant_noise_block_size,
                 xformers_att_config=cfg.decoder.xformers_att_config,
             )
-        elif self.attn_implementation == "fast" or self.attn_implementation == "fast_fused":
+
+    def build_encoder_attention(self, embed_dim, cfg):
+        if self.attn_implementation.startswith("fast"):
             return FastMultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
+                kdim=cfg.encoder.embed_dim,
+                vdim=cfg.encoder.embed_dim,
                 dropout=cfg.attention_dropout,
-                add_bias_kv=add_bias_kv,
-                add_zero_attn=add_zero_attn,
-                self_attention=True,
+                encoder_decoder_attention=True,
                 is_decoder=True,
+                fused_qkv=False,
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
-                rope_args=getattr(cfg, "rope_args", None),
-                fused_qkv=(self.attn_implementation == "fast_fused")
             )
-        elif self.attn_implementation == "fast_gqa" or self.attn_implementation == "fast_gqa_fused":
+        elif (
+            self.attn_implementation.startswith("fast_gqa")
+            and getattr(cfg.decoder, "kv_attention_heads", None) is not None
+        ):
             return FastGroupedQueryAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
                 cfg.decoder.kv_attention_heads,
+                kdim=cfg.encoder.embed_dim,
+                vdim=cfg.encoder.embed_dim,
                 dropout=cfg.attention_dropout,
-                add_bias_kv=add_bias_kv,
-                add_zero_attn=add_zero_attn,
-                self_attention=True,
+                encoder_decoder_attention=True,
                 is_decoder=True,
+                fused_qkv=False,
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
-                rope_args=getattr(cfg, "rope_args", None),
-                fused_qkv=(self.attn_implementation == "fast_gqa_fused")
             )
         else:
-            raise NotImplementedError(
-                f"Unknown attention implementation: {self.attn_implementation}"
-            )
-
-    def build_encoder_attention(self, embed_dim, cfg):
-        if self.attn_implementation == "fairseq":
             return MultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
@@ -459,37 +491,6 @@ class TransformerDecoderLayerBase(nn.Module):
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
                 xformers_att_config=cfg.encoder.xformers_att_config,
-            )
-        elif self.attn_implementation == "fast" or self.attn_implementation == "fast_fused":
-            return FastMultiheadAttention(
-                embed_dim,
-                cfg.decoder.attention_heads,
-                kdim=cfg.encoder.embed_dim,
-                vdim=cfg.encoder.embed_dim,
-                dropout=cfg.attention_dropout,
-                encoder_decoder_attention=True,
-                is_decoder=True,
-                fused_qkv=False,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-            )
-        elif self.attn_implementation == "fast_gqa" or self.attn_implementation == "fast_gqa_fused":
-            return FastGroupedQueryAttention(
-                embed_dim,
-                cfg.decoder.attention_heads,
-                cfg.decoder.kv_attention_heads,
-                kdim=cfg.encoder.embed_dim,
-                vdim=cfg.encoder.embed_dim,
-                dropout=cfg.attention_dropout,
-                encoder_decoder_attention=True,
-                is_decoder=True,
-                fused_qkv=False,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-            )
-        else:
-            raise NotImplementedError(
-                f"Unknown attention implementation: {self.attn_implementation}"
             )
 
     def prepare_for_onnx_export_(self):

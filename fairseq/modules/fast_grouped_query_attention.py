@@ -247,17 +247,10 @@ class FastGroupedQueryAttention(MultiheadAttention):
 
         if (self.num_heads != self.num_kv_heads) and k is not None and v is not None:
             # self.num_heads == self.num_kv_heads * self.q_per_kv
-            k = rearrange(k, "(b h) t d -> b h 1 t d", h=self.num_kv_heads)
-            k = k.expand(bsz, self.num_kv_heads, self.q_per_kv, -1, self.head_dim)
-            k = rearrange(
-                k, "b h nq t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
-            )
-
-            v = rearrange(v, "(b h) t d -> b h 1 t d", h=self.num_kv_heads)
-            v = v.expand(bsz, self.num_kv_heads, self.q_per_kv, -1, self.head_dim)
-            v = rearrange(
-                v, "b h nq t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
-            )
+            k = rearrange(k, "(b h) t d -> b h t d", h=self.num_kv_heads)
+            k = torch.repeat_interleave(k, dim=1, repeats=self.q_per_kv)
+            v = rearrange(v, "(b h) t d -> b h t d", h=self.num_kv_heads)
+            v = torch.repeat_interleave(v, dim=1, repeats=self.q_per_kv)
 
         if saved_state is not None:
             # saved states are stored with shape (bsz, num_kv_heads, q_per_kv, seq_len, head_dim)
