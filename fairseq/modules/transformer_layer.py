@@ -61,9 +61,13 @@ class TransformerEncoderLayerBase(nn.Module):
         )
         self.normalize_before = cfg.encoder.normalize_before
         self.use_glu = getattr(cfg.encoder, "use_glu", False)
+        self.activation_fn = utils.get_activation_fn(activation=cfg.activation_fn)
 
-        if not self.use_glu:
-            self.activation_fn = utils.get_activation_fn(activation=cfg.activation_fn)
+        if self.use_glu:
+            self.glu = self.build_glu(
+                self.embed_dim, cfg.encoder.ffn_embed_dim, self.activation_fn
+            )
+        else:
             self.fc1 = self.build_fc1(
                 self.embed_dim,
                 cfg.encoder.ffn_embed_dim,
@@ -76,10 +80,6 @@ class TransformerEncoderLayerBase(nn.Module):
                 self.quant_noise,
                 self.quant_noise_block_size,
             )
-        else:
-            self.glu = self.build_glu(
-                self.embed_dim, cfg.encoder.ffn_embed_dim, cfg.activation_fn
-            )
 
         self.final_layer_norm = self.build_normalization(
             self.embed_dim, rms=cfg.encoder.use_rmsnorm
@@ -91,7 +91,7 @@ class TransformerEncoderLayerBase(nn.Module):
     def build_fc2(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(nn.Linear(input_dim, output_dim), q_noise, qn_block_size)
 
-    def build_glu(self, input_dim, intermediate_dim, activation_fn="silu", bias=False):
+    def build_glu(self, input_dim, intermediate_dim, activation_fn, bias=False):
         return GLU(input_dim, intermediate_dim, activation_fn=activation_fn, bias=bias)
 
     def _get_fc_rank(self, remove_num: int) -> List[int]:
@@ -152,18 +152,7 @@ class TransformerEncoderLayerBase(nn.Module):
     def build_self_attention(self, embed_dim, cfg):
         is_fused = self.attn_implementation.endswith("fused")
 
-        if self.attn_implementation.startswith("fast"):
-            return FastMultiheadAttention(
-                embed_dim,
-                cfg.encoder.attention_heads,
-                dropout=cfg.attention_dropout,
-                self_attention=True,
-                fused_qkv=is_fused,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-                rope_args=getattr(cfg, "rope_args", None),
-            )
-        elif (
+        if (
             self.attn_implementation.startswith("fast_gqa")
             and getattr(cfg.encoder, "kv_attention_heads", None) is not None
         ):
@@ -171,6 +160,17 @@ class TransformerEncoderLayerBase(nn.Module):
                 embed_dim,
                 cfg.encoder.attention_heads,
                 cfg.encoder.kv_attention_heads,
+                dropout=cfg.attention_dropout,
+                self_attention=True,
+                fused_qkv=is_fused,
+                q_noise=self.quant_noise,
+                qn_block_size=self.quant_noise_block_size,
+                rope_args=getattr(cfg, "rope_args", None),
+            )
+        elif self.attn_implementation.startswith("fast"):
+            return FastMultiheadAttention(
+                embed_dim,
+                cfg.encoder.attention_heads,
                 dropout=cfg.attention_dropout,
                 self_attention=True,
                 fused_qkv=is_fused,
@@ -190,11 +190,7 @@ class TransformerEncoderLayerBase(nn.Module):
             )
 
     def build_normalization(self, dim, rms=False):
-        return (
-            LayerNorm(dim, export=self.cfg.export)
-            if not rms
-            else RMSNorm(dim, export=self.cfg.export)
-        )
+        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
 
     def residual_connection(self, x, residual):
         return residual + x
@@ -273,9 +269,11 @@ class TransformerEncoderLayerBase(nn.Module):
             x = self.final_layer_norm(x)
 
         x = (
-            self.fc2(self.activation_dropout_module(self.activation_fn(self.fc1(x))))
-            if not self.use_glu
-            else self.glu(x)
+            self.glu(x)
+            if self.use_glu
+            else self.fc2(
+                self.activation_dropout_module(self.activation_fn(self.fc1(x)))
+            )
         )
 
         fc_result = x
@@ -363,9 +361,13 @@ class TransformerDecoderLayerBase(nn.Module):
             )
 
         self.use_glu = getattr(cfg.decoder, "use_glu", False)
+        self.activation_fn = utils.get_activation_fn(activation=cfg.activation_fn)
 
-        if not self.use_glu:
-            self.activation_fn = utils.get_activation_fn(activation=cfg.activation_fn)
+        if self.use_glu:
+            self.glu = self.build_glu(
+                self.embed_dim, cfg.decoder.ffn_embed_dim, self.activation_fn
+            )
+        else:
             self.fc1 = self.build_fc1(
                 self.embed_dim,
                 cfg.decoder.ffn_embed_dim,
@@ -377,10 +379,6 @@ class TransformerDecoderLayerBase(nn.Module):
                 self.embed_dim,
                 self.quant_noise,
                 self.quant_noise_block_size,
-            )
-        else:
-            self.glu = self.build_glu(
-                self.embed_dim, cfg.decoder.ffn_embed_dim, cfg.activation_fn
             )
 
         self.final_layer_norm = self.build_normalization(
@@ -396,7 +394,7 @@ class TransformerDecoderLayerBase(nn.Module):
     def build_fc2(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(nn.Linear(input_dim, output_dim), q_noise, qn_block_size)
 
-    def build_glu(self, input_dim, intermediate_dim, activation_fn="silu", bias=False):
+    def build_glu(self, input_dim, intermediate_dim, activation_fn, bias=False):
         return GLU(input_dim, intermediate_dim, activation_fn=activation_fn, bias=bias)
 
     def build_self_attention(
@@ -404,10 +402,14 @@ class TransformerDecoderLayerBase(nn.Module):
     ):
         is_fused = self.attn_implementation.endswith("fused")
 
-        if self.attn_implementation.startswith("fast"):
-            return FastMultiheadAttention(
+        if (
+            self.attn_implementation.startswith("fast_gqa")
+            and getattr(cfg.decoder, "kv_attention_heads", None) is not None
+        ):
+            return FastGroupedQueryAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
+                cfg.decoder.kv_attention_heads,
                 dropout=cfg.attention_dropout,
                 add_bias_kv=add_bias_kv,
                 add_zero_attn=add_zero_attn,
@@ -418,14 +420,10 @@ class TransformerDecoderLayerBase(nn.Module):
                 qn_block_size=self.quant_noise_block_size,
                 rope_args=getattr(cfg, "rope_args", None),
             )
-        elif (
-            self.attn_implementation.startswith("fast_gqa")
-            and getattr(cfg.decoder, "kv_attention_heads", None) is not None
-        ):
-            return FastGroupedQueryAttention(
+        elif self.attn_implementation.startswith("fast"):
+            return FastMultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
-                cfg.decoder.kv_attention_heads,
                 dropout=cfg.attention_dropout,
                 add_bias_kv=add_bias_kv,
                 add_zero_attn=add_zero_attn,
@@ -450,10 +448,14 @@ class TransformerDecoderLayerBase(nn.Module):
             )
 
     def build_encoder_attention(self, embed_dim, cfg):
-        if self.attn_implementation.startswith("fast"):
-            return FastMultiheadAttention(
+        if (
+            self.attn_implementation.startswith("fast_gqa")
+            and getattr(cfg.decoder, "kv_attention_heads", None) is not None
+        ):
+            return FastGroupedQueryAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
+                cfg.decoder.kv_attention_heads,
                 kdim=cfg.encoder.embed_dim,
                 vdim=cfg.encoder.embed_dim,
                 dropout=cfg.attention_dropout,
@@ -463,14 +465,10 @@ class TransformerDecoderLayerBase(nn.Module):
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
             )
-        elif (
-            self.attn_implementation.startswith("fast_gqa")
-            and getattr(cfg.decoder, "kv_attention_heads", None) is not None
-        ):
-            return FastGroupedQueryAttention(
+        elif self.attn_implementation.startswith("fast"):
+            return FastMultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
-                cfg.decoder.kv_attention_heads,
                 kdim=cfg.encoder.embed_dim,
                 vdim=cfg.encoder.embed_dim,
                 dropout=cfg.attention_dropout,
@@ -620,9 +618,11 @@ class TransformerDecoderLayerBase(nn.Module):
             x = self.final_layer_norm(x)
 
         x = (
-            self.fc2(self.activation_dropout_module(self.activation_fn(self.fc1(x))))
-            if not self.use_glu
-            else self.glu(x)
+            self.glu(x)
+            if self.use_glu
+            else self.fc2(
+                self.activation_dropout_module(self.activation_fn(self.fc1(x)))
+            )
         )
 
         x = self.dropout_module(x)

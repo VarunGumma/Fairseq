@@ -80,8 +80,8 @@ class FastMultiheadAttention(MultiheadAttention):
         self.rotary_pos_embed = (
             RotaryEmbedding(
                 dim=self.head_dim // 2,
+                use_xpos=self.xpos,
                 theta=rope_args.get("theta", 10000),
-                use_xpos=rope_args.get("use_xpos", False),
                 xpos_scale_base=rope_args.get("xpos_scale_base", 512),
             )
             if self.rope

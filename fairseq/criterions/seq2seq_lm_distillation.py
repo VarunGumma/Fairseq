@@ -26,10 +26,18 @@ class Seq2SeqLMDistillationCriterionConfig(CrossEntropyCriterionConfig):
         default=None,
         metadata={"help": "arguments for knowledge distillation (kd_strategy)"},
     )
+    report_accuracy: bool = field(
+        default=False,
+        metadata={"help": "report accuracy metric"},
+    )
+    ignore_prefix_size: int = field(
+        default=0,
+        metadata={"help": "Ignore first N tokens"},
+    )
 
 
 @register_criterion(
-    "seq2Seq_lm_distillation",
+    "seq2seq_lm_distillation",
     dataclass=Seq2SeqLMDistillationCriterionConfig,
 )
 class Seq2SeqLMDistillationCriterion(CrossEntropyCriterion):
@@ -38,9 +46,13 @@ class Seq2SeqLMDistillationCriterion(CrossEntropyCriterion):
         task,
         sentence_avg,
         kd_args=None,
+        ignore_prefix_size=0,
+        report_accuracy=False,
     ):
         super().__init__(task, sentence_avg)
         self.sentence_avg = sentence_avg
+        self.ignore_prefix_size = ignore_prefix_size
+        self.report_accuracy = report_accuracy
 
         # new parameters
         assert kd_args is not None, "Knowledge distillation arguments are missing!"

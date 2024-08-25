@@ -83,8 +83,8 @@ class FastGroupedQueryAttention(MultiheadAttention):
         self.rotary_pos_embed = (
             RotaryEmbedding(
                 dim=self.head_dim // 2,
+                use_xpos=self.xpos,
                 theta=rope_args.get("theta", 10000),
-                use_xpos=rope_args.get("use_xpos", False),
                 xpos_scale_base=rope_args.get("xpos_scale_base", 512),
             )
             if self.rope
@@ -137,6 +137,20 @@ class FastGroupedQueryAttention(MultiheadAttention):
             nn.init.xavier_normal_(self.bias_k)
         if self.bias_v is not None:
             nn.init.xavier_normal_(self.bias_v)
+
+    def _rearrange(self, x):
+        if len(x.shape) == 3:
+            return x
+        elif len(x.shape) == 4:
+            return rearrange(
+                x, "b (h nq) t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
+            )
+        elif len(x.shape) == 5:
+            return rearrange(
+                x, "b h nq t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
+            )
+        else:
+            raise ValueError(f"Invalid shape: {x.shape}")
 
     def forward(
         self,
@@ -219,66 +233,64 @@ class FastGroupedQueryAttention(MultiheadAttention):
 
         q = rearrange(
             q,
-            "t b (h nq d) -> (b h nq) t d",
+            "t b (h nq d) -> b (h nq) t d",
             nq=self.q_per_kv,
             h=self.num_kv_heads,
             d=self.head_dim,
         )
-        # q shape: (bsz * self.num_heads, tgt_len, head_dim)
+        # q shape: (bsz, self.num_heads, tgt_len, head_dim)
         kv_bsz = bsz  # need default value for scripting
 
         if k is not None:
             kv_bsz = k.size(1)
             k = rearrange(
                 k,
-                "t b (h d) -> (b h) t d",
+                "t b (h d) -> b h t d",
                 h=self.num_kv_heads,
                 d=self.head_dim,
             )
-            # k shape: (bsz * self.num_kv_heads, src_len, head_dim)
+            # k shape: (bsz, self.num_kv_heads, src_len, head_dim)
         if v is not None:
             v = rearrange(
                 v,
-                "t b (h d) -> (b h) t d",
+                "t b (h d) -> b h t d",
                 h=self.num_kv_heads,
                 d=self.head_dim,
             )
-            # v shape: (bsz * self.num_kv_heads, src_len, head_dim)
+            # v shape: (bsz, self.num_kv_heads, src_len, head_dim)
 
         if (self.num_heads != self.num_kv_heads) and k is not None and v is not None:
             # self.num_heads == self.num_kv_heads * self.q_per_kv
-            k = rearrange(k, "(b h) t d -> b h t d", h=self.num_kv_heads)
             k = torch.repeat_interleave(k, dim=1, repeats=self.q_per_kv)
-            v = rearrange(v, "(b h) t d -> b h t d", h=self.num_kv_heads)
             v = torch.repeat_interleave(v, dim=1, repeats=self.q_per_kv)
 
         if saved_state is not None:
-            # saved states are stored with shape (bsz, num_kv_heads, q_per_kv, seq_len, head_dim)
+            # saved states are stored with shape (bsz, num_kv_heads * q_per_kv, seq_len, head_dim)
             if "prev_key" in saved_state:
                 _prev_key = saved_state["prev_key"]
                 assert _prev_key is not None
                 kv_bsz = _prev_key.size(0)
                 prev_key = _prev_key.view(
-                    kv_bsz * self.num_kv_heads * self.q_per_kv, -1, self.head_dim
+                    kv_bsz, self.num_kv_heads * self.q_per_kv, -1, self.head_dim
                 )
                 if static_kv:
                     k = prev_key
                 else:
                     assert k is not None
-                    k = torch.cat([prev_key, k], dim=1)
-                src_len = k.size(1)
+                    k = torch.cat([prev_key, k], dim=-2)
+                src_len = k.size(-2)
             if "prev_value" in saved_state:
                 _prev_value = saved_state["prev_value"]
                 assert _prev_value is not None
                 assert kv_bsz == _prev_value.size(0)
                 prev_value = _prev_value.view(
-                    kv_bsz * self.num_kv_heads * self.q_per_kv, -1, self.head_dim
+                    kv_bsz, self.num_kv_heads * self.q_per_kv, -1, self.head_dim
                 )
                 if static_kv:
                     v = prev_value
                 else:
                     assert v is not None
-                    v = torch.cat([prev_value, v], dim=1)
+                    v = torch.cat([prev_value, v], dim=-2)
             prev_key_padding_mask: Optional[Tensor] = None
             if "prev_key_padding_mask" in saved_state:
                 prev_key_padding_mask = saved_state["prev_key_padding_mask"]
@@ -287,7 +299,7 @@ class FastGroupedQueryAttention(MultiheadAttention):
                 key_padding_mask=key_padding_mask,
                 prev_key_padding_mask=prev_key_padding_mask,
                 batch_size=kv_bsz,
-                src_len=k.size(1),
+                src_len=k.size(-2),
                 static_kv=static_kv,
             )
 
@@ -303,16 +315,9 @@ class FastGroupedQueryAttention(MultiheadAttention):
             incremental_state = self._set_input_buffer(incremental_state, saved_state)
 
         assert k is not None
-        assert k.size(1) == src_len
+        assert k.size(-2) == src_len
 
         if self.rotary_pos_embed is not None:
-            q = rearrange(
-                q, "(b h nq) t d -> b h nq t d", h=self.num_kv_heads, nq=self.q_per_kv
-            )
-            k = rearrange(
-                k, "(b h nq) t d -> b h nq t d", h=self.num_kv_heads, nq=self.q_per_kv
-            )
-
             if saved_state is not None:
                 q, k = self.rotary_pos_embed.rotate_queries_with_cached_keys(q, k)
             else:
@@ -323,10 +328,10 @@ class FastGroupedQueryAttention(MultiheadAttention):
                     q, k = self.rotary_pos_embed.rotate_queries_and_keys(q, k)
 
             q = rearrange(
-                q, "b h nq t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
+                q, "b (h nq) t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
             )
             k = rearrange(
-                k, "b h nq t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
+                k, "b (h nq) t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
             )
 
         # This is part of a workaround to get around fork/join parallelism
@@ -368,11 +373,14 @@ class FastGroupedQueryAttention(MultiheadAttention):
                 if attn_mask is not None
                 else key_padding_mask
             )
-
         else:
             combined_mask = attn_mask
 
         combined_mask = combined_mask.to(q.dtype) if combined_mask is not None else None
+
+        q = self._rearrange(q)
+        k = self._rearrange(k)
+        v = self._rearrange(v)
 
         attn = scaled_dot_product_attention(
             query=q,

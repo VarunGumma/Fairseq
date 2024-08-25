@@ -403,8 +403,9 @@ def should_stop_early(cfg: DictConfig, valid_loss: float) -> bool:
     if cfg.checkpoint.patience <= 0:
         return False
 
-    def is_better(a, b):
-        return a > b if cfg.checkpoint.maximize_best_checkpoint_metric else a < b
+    is_better = lambda a, b: (
+        a > b if cfg.checkpoint.maximize_best_checkpoint_metric else a < b
+    )
 
     prev_best = getattr(should_stop_early, "best", None)
     if prev_best is None or is_better(valid_loss, prev_best):
@@ -686,7 +687,7 @@ def validate(
                 cfg.common.wandb_run_name
                 if distributed_utils.is_master(cfg.distributed_training)
                 else os.path.basename(cfg.checkpoint.save_dir)
-            )
+            ),
         )
 
         # create a new root metrics aggregator so validation metrics

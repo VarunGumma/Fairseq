@@ -64,6 +64,12 @@ class EncDecBaseConfig(FairseqDataclass):
             "help": "use a GLU module instead of FFN in the transformer layers, similar to Llama2. It uses the ffn_embed_dim as the intermediate dimension"
         },
     )
+    use_mlp: bool = field(
+        default=False,
+        metadata={
+            "help": "use a MLP module instead of FFN in the transformer layers. It uses the ffn_embed_dim as the intermediate dimension"
+        },
+    )
     use_rmsnorm: bool = field(
         default=False, metadata={"help": "use RMSNorm instead of LayerNorm"}
     )

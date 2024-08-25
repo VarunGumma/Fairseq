@@ -31,7 +31,7 @@ from .lightweight_convolution import LightweightConv, LightweightConv1dTBC
 from .linearized_convolution import LinearizedConvolution
 from .location_attention import LocationAttention
 from .lstm_cell_with_zoneout import LSTMCellWithZoneOut
-from .mlp import MLP, GLU
+from .glu import GLU
 from .multihead_attention import MultiheadAttention
 from .fast_multihead_attention import FastMultiheadAttention
 from .fast_grouped_query_attention import FastGroupedQueryAttention
@@ -112,5 +112,5 @@ __all__ = [
     "RotaryPositionMultiHeadedAttention",
     "RMSNorm",
     "GLU",
-    "MLP"
+    "MLP",
 ]
