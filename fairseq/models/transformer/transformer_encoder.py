@@ -130,11 +130,7 @@ class TransformerEncoderBase(FairseqEncoder):
             self.alibi = None
 
     def build_normalization(self, dim, rms=False):
-        return (
-            LayerNorm(dim, export=self.cfg.export)
-            if not rms
-            else RMSNorm(dim, export=self.cfg.export)
-        )
+        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
 
     def build_encoder_layer(self, cfg):
         layer = transformer_layer.TransformerEncoderLayerBase(

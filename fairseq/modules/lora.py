@@ -34,7 +34,7 @@ class LoRAEmbedding(nn.Embedding, LoRALayer):
         alpha: int = 1,
         dropout: float = 0.0,
         rank_scaled: bool = False,
-        **kwargs
+        **kwargs,
     ):
         nn.Embedding.__init__(self, num_embeddings, embedding_dim, **kwargs)
         LoRALayer.__init__(
@@ -98,7 +98,7 @@ class LoRALinear(nn.Linear, LoRALayer):
         alpha: int = 1,
         dropout: float = 0.0,
         rank_scaled: bool = False,
-        **kwargs
+        **kwargs,
     ):
 
         nn.Linear.__init__(self, in_features, out_features, **kwargs)

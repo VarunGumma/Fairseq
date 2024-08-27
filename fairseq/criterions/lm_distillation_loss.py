@@ -21,7 +21,7 @@ from fairseq.criterions.cross_entropy import (
 
 
 @dataclass
-class Seq2SeqLMDistillationCriterionConfig(CrossEntropyCriterionConfig):
+class LMDistillationCriterionConfig(CrossEntropyCriterionConfig):
     kd_args: Optional[str] = field(
         default=None,
         metadata={"help": "arguments for knowledge distillation (kd_strategy)"},
@@ -37,10 +37,10 @@ class Seq2SeqLMDistillationCriterionConfig(CrossEntropyCriterionConfig):
 
 
 @register_criterion(
-    "seq2seq_lm_distillation",
-    dataclass=Seq2SeqLMDistillationCriterionConfig,
+    "lm_distillation_loss",
+    dataclass=LMDistillationCriterionConfig,
 )
-class Seq2SeqLMDistillationCriterion(CrossEntropyCriterion):
+class LMDistillationCriterion(CrossEntropyCriterion):
     def __init__(
         self,
         task,
@@ -157,12 +157,12 @@ class Seq2SeqLMDistillationCriterion(CrossEntropyCriterion):
                 teacher_model, teacher_output, sample, log_probs=False
             )
 
-            m = self.beta * probs + (1 - self.beta) * teacher_probs
+            m_log = torch.log(self.beta * probs + (1 - self.beta) * teacher_probs)
 
             kd_loss = self.beta * F.kl_div(
-                m.log(), lprobs, log_target=True, reduction="none"
+                m_log, lprobs, log_target=True, reduction="none"
             ) + (1 - self.beta) * F.kl_div(
-                m.log(), teacher_lprobs, log_target=True, reduction="none"
+                m_log, teacher_lprobs, log_target=True, reduction="none"
             )
             kd_loss = kd_loss.masked_fill_(pad_mask, 0.0).sum()
         else:

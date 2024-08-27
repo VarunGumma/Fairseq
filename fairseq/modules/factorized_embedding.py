@@ -1,5 +1,4 @@
 import torch.nn as nn
-from fairseq import utils
 
 
 class FactorizedEmbedding(nn.Module):
@@ -20,14 +19,19 @@ class FactorizedEmbedding(nn.Module):
         embedding_dim,
         hid_dim=128,
         padding_idx=1,
-        bias=False,
     ):
         super().__init__()
-        self.embedding_dim = embedding_dim
         self.padding_idx = padding_idx
+        self.embedding_dim = embedding_dim
 
-        self.up = nn.Linear(hid_dim, embedding_dim, bias=bias)
-        self.emb = nn.Embedding(num_embeddings, hid_dim, padding_idx=padding_idx)
+        self.up = nn.Linear(hid_dim, embedding_dim, bias=False)
+        self.m = nn.Embedding(num_embeddings, hid_dim, padding_idx=padding_idx)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.normal_(self.m.weight, mean=0, std=self.embedding_dim**-0.5)
+        nn.init.constant_(self.m.weight[self.padding_idx], 0)
 
     def forward(self, x):
-        return self.up(self.emb(x))
+        return self.up(self.m(x))

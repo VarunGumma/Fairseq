@@ -182,7 +182,7 @@ def main(cfg: FairseqConfig) -> None:
 
     # build teacher model here
     if (cfg.task._name == "seq2seq_lm_distillation") and (
-        cfg.criterion._name == "seq2seq_lm_distillation"
+        cfg.criterion._name == "lm_distillation_loss"
     ):
         logging.info("Building teacher model")
 
@@ -311,7 +311,7 @@ def main(cfg: FairseqConfig) -> None:
     # we had to build the teacher model first before the student and trainer
     # to avoid over-writing the generator for beam-search of the student with that of the teacher
     if (cfg.task._name == "seq2seq_lm_distillation") and (
-        cfg.criterion._name == "seq2seq_lm_distillation"
+        cfg.criterion._name == "lm_distillation_loss"
     ):
         trainer.assign_teacher_model(teacher_model)
 
