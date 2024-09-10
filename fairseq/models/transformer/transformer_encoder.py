@@ -18,14 +18,13 @@ from fairseq.modules import (
     FairseqDropout,
     LayerDropModuleList,
     LayerNorm,
+    RMSNorm,
     PositionalEmbedding,
     transformer_layer,
 )
 
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
-
-from fairseq.modules.rms_norm import RMSNorm
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -130,7 +129,11 @@ class TransformerEncoderBase(FairseqEncoder):
             self.alibi = None
 
     def build_normalization(self, dim, rms=False):
-        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
+        return (
+            LayerNorm(dim, export=self.cfg.export)
+            if not rms
+            else RMSNorm(dim, export=self.cfg.export)
+        )
 
     def build_encoder_layer(self, cfg):
         layer = transformer_layer.TransformerEncoderLayerBase(

@@ -25,6 +25,7 @@ from .grad_multiply import GradMultiply
 from .gumbel_vector_quantizer import GumbelVectorQuantizer
 from .kmeans_vector_quantizer import KmeansVectorQuantizer
 from .layer_drop import LayerDropModuleList
+from .rms_norm import RMSNorm
 from .layer_norm import Fp32LayerNorm, LayerNorm
 from .learned_positional_embedding import LearnedPositionalEmbedding
 from .lightweight_convolution import LightweightConv, LightweightConv1dTBC
@@ -36,7 +37,6 @@ from .multihead_attention import MultiheadAttention
 from .fast_multihead_attention import FastMultiheadAttention
 from .fast_grouped_query_attention import FastGroupedQueryAttention
 from .positional_embedding import PositionalEmbedding
-from .rms_norm import RMSNorm
 from .same_pad import SamePad, SamePad2d
 from .scalar_bias import ScalarBias
 from .sinusoidal_positional_embedding import SinusoidalPositionalEmbedding
@@ -85,6 +85,7 @@ __all__ = [
     "KmeansVectorQuantizer",
     "LayerDropModuleList",
     "LayerNorm",
+    "RMSNorm",
     "LearnedPositionalEmbedding",
     "LightweightConv1dTBC",
     "LightweightConv",
@@ -110,7 +111,6 @@ __all__ = [
     "RelPositionMultiHeadedAttention",
     "RelPositionalEncoding",
     "RotaryPositionMultiHeadedAttention",
-    "RMSNorm",
     "GLU",
     "MLP",
 ]

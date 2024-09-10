@@ -311,6 +311,14 @@ def transformer_IT2_dist(args):
     base_architecture(args)
 
 
+@register_model_architecture("transformer", "roformer_IT2_dist")
+def roformer_IT2_dist(args):
+    args.attn_implementation = getattr(args, "attn_implementation", "fast")
+    args.no_token_positional_embeddings = getattr(args, "no_token_positional_embeddings", True)
+    args.rope_args = getattr(args, "rope_args", '{"theta": 10000}')
+    transformer_IT2_dist(args)
+
+
 @register_model_architecture("transformer", "transformer_IT2")
 def transformer_IT2(args):
     args.activation_fn = getattr(args, "activation_fn", "gelu")
@@ -326,3 +334,13 @@ def transformer_IT2(args):
     args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
     args.decoder_normalize_before = getattr(args, "decoder_normalize_before", True)
     base_architecture(args)
+
+
+@register_model_architecture("transformer", "roformer_IT2")
+def roformer_IT2(args):
+    args.attn_implementation = getattr(args, "attn_implementation", "fast")
+    args.no_token_positional_embeddings = getattr(
+        args, "no_token_positional_embeddings", True
+    )
+    args.rope_args = getattr(args, "rope_args", '{"theta": 10000}')
+    transformer_IT2(args)

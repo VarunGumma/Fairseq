@@ -22,7 +22,7 @@ from fairseq.modules import (
     FastGroupedQueryAttention,
 )
 
-# This module does not support `scale_attn`, `scale_heads`, `scale_fc`, `scale_resids` anymore
+# BUG: This module does not support `scale_attn`, `scale_heads`, `scale_fc`, `scale_resids` anymore
 
 
 class TransformerEncoderLayerBase(nn.Module):
@@ -190,10 +190,14 @@ class TransformerEncoderLayerBase(nn.Module):
             )
 
     def build_normalization(self, dim, rms=False):
-        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
+        return (
+            LayerNorm(dim, export=self.cfg.export)
+            if not rms
+            else RMSNorm(dim, export=self.cfg.export)
+        )
 
-    def residual_connection(self, x, residual):
-        return residual + x
+    def residual_connection(self, x, residual, scale_resid=None):
+        return residual + x if scale_resid is None else (scale_resid * residual + x)
 
     def upgrade_state_dict_named(self, state_dict, name):
         """
@@ -260,7 +264,7 @@ class TransformerEncoderLayerBase(nn.Module):
             attn_mask=attn_mask,
         )
         x = self.dropout_module(x)
-        x = self.residual_connection(x, residual)
+        x = self.residual_connection(x, residual, scale_resid=self.sa_scale_resid)
         if not self.normalize_before:
             x = self.self_attn_layer_norm(x)
 
@@ -279,7 +283,7 @@ class TransformerEncoderLayerBase(nn.Module):
         fc_result = x
 
         x = self.dropout_module(x)
-        x = self.residual_connection(x, residual)
+        x = self.residual_connection(x, residual, scale_resid=self.ffn_scale_resid)
 
         if not self.normalize_before:
             x = self.final_layer_norm(x)
@@ -494,11 +498,15 @@ class TransformerDecoderLayerBase(nn.Module):
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
 
-    def residual_connection(self, x, residual):
-        return residual + x
+    def residual_connection(self, x, residual, scale_resid=None):
+        return residual + x if scale_resid is None else (scale_resid * residual + x)
 
     def build_normalization(self, dim, rms=False):
-        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
+        return (
+            LayerNorm(dim, export=self.cfg.export)
+            if not rms
+            else RMSNorm(dim, export=self.cfg.export)
+        )
 
     def forward(
         self,
