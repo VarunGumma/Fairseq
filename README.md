@@ -17,7 +17,7 @@ This clone of fairseq supports `Knowledge Distillation`, `Recurrent Stacking`, `
 
 | **Name and Citation** | **Description** | **Flags to Activate** | **Source** |
 |-----------------------|-----------------------|-----------------------|------------|
-| **Knowledge Distillation** ([Hinton _et al_.](https://arxiv.org/abs/1503.02531), [Kim & Rush](https://aclanthology.org/D16-1139), [Wang _et al_.](https://aclanthology.org/2021.acl-long.504), [Gumma _et al_.](https://aclanthology.org/2023.eamt-1.11/)) | Transfers _soft_ information from a pretrained teacher model to a smaller student model. Please check [here](https://github.com/VarunGumma/fairseq/blob/main/fairseq/criterions/seq2seq_lm_distillation.py) for a detailed description of the arguments. | `--teacher-checkpoint-path $path --task seq2seq_lm_distillation --criterion lm_distillation --kd-args '{"strategy": "on_policy", "lambda": 1.0, "loss_type": "forward_kld"}'` | [Selective Distillation](https://github.com/LeslieOverfitting/selective_distillation) |
+| **Knowledge Distillation** ([Hinton _et al_.](https://arxiv.org/abs/1503.02531), [Kim & Rush](https://aclanthology.org/D16-1139), [Wang _et al_.](https://aclanthology.org/2021.acl-long.504), [Gumma _et al_.](https://aclanthology.org/2023.eamt-1.11/)) | Transfers _soft_ information from a pretrained teacher model to a smaller student model. Please check [here](https://github.com/VarunGumma/fairseq/blob/main/fairseq/criterions/seq2seq_lm_distillation.py) for a detailed description of the arguments. | `--teacher-checkpoint-path $path --task seq2seq_lm_distillation --criterion lm_distillation_loss --kd-args '{"strategy": "on_policy", "lambda": 1.0, "loss_type": "forward_kld"}'` | [Selective Distillation](https://github.com/LeslieOverfitting/selective_distillation) |
 | **Recurrent Stacking** ([Dabre & Fujita](https://ojs.aaai.org/index.php/AAAI/article/view/4590)) | Extreme parameter sharing technique in which all layers in the encoder/decoder are shared | `--encoder-recurrent-stacking 6 --decoder-recurrent-stacking 6` | - |
 | **Low-Rank Adaptation (LoRA)** ([Hu _et al_.](https://openreview.net/forum?id=nZeVKeeFYf9)) | Efficient model adaptation technique that modifies a small number of model parameters while freezing the rest. | `--lora-args '{"r": 8, "alpha": 16, "dropout": 0.05, "bias": "none, "target_modules": "k_proj,v_proj", "rank_scaled": false}' --attn-implementation fast --load-checkpoint-liberally` | [LoRA Implementation](https://github.com/microsoft/LoRA) |
 | **Rotary Positional Embedding (RoPE)** ([Su _et al_.](https://arxiv.org/abs/2104.09864)) | Encodes absolute position with a rotation matrix and incorporates explicit relative position dependency in self-attention formulation | `--rope-args '{"theta": 10000, "use_xpos": false, "xpos_scale_base": 512}' --attn-implementation fast --no-token-positional-embeddings --load-checkpoint-liberally` | [RoPE Implementation](https://github.com/lucidrains/rotary-embedding-torch/blob/main/rotary_embedding_torch/rotary_embedding_torch.py) |
@@ -33,14 +33,14 @@ This clone of fairseq supports `Knowledge Distillation`, `Recurrent Stacking`, `
 
 
 ## Upcoming features ($\alpha$-testing)
-* `--bf16` has been decoupled from `--tpu`, and can be used independently to train the model with `bfloat16`.
+* `--bf16` has been decoupled from `--tpu`, and can be used independently to train the model with `bfloat16`. Note, for models pretrained using `fp16`, `bf16` inference of finetuning can yield highly unpredictable results.
 * `--torch-compile $mode` can be used in the `interactive` and `generate` methods for faster inference. 
 
 
 # Requirements and Installation
 
-* [PyTorch](http://pytorch.org/) version >= 2.1.1
-* Python version >= 3.8, <= 3.12
+* [PyTorch](http://pytorch.org/) version >= 2.4.1
+* Python version >= 3.10, <= 3.12
 * For training new models, you'll also need an NVIDIA GPU and [NCCL](https://github.com/NVIDIA/nccl)
 * **To install fairseq** and develop locally:
 
@@ -48,6 +48,12 @@ This clone of fairseq supports `Knowledge Distillation`, `Recurrent Stacking`, `
 git clone https://github.com/VarunGumma/fairseq
 cd fairseq
 pip install -e ./
+```
+
+or **To install directly**:
+
+```bash
+pip install git+https://github.com/VarunGumma/fairseq.git
 ```
 
 * **For faster training** install NVIDIA's [apex](https://github.com/NVIDIA/apex) library:
