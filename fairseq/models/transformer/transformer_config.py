@@ -141,10 +141,6 @@ class TransformerConfig(FairseqDataclass):
             "help": "dropout probability after activation in FFN.",
         },
     )
-    scale_resids: bool = field(
-        default=False,
-        metadata={"help": "scale the residuals in the transformer modules (fine to set False as default)"}
-    )
     adaptive_input: bool = False
     encoder: EncDecBaseConfig = field(default=EncDecBaseConfig)
     # TODO should really be in the encoder config
