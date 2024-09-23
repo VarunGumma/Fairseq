@@ -82,6 +82,8 @@ class FastMultiheadAttention(MultiheadAttention):
                 dim=self.head_dim // 2,
                 use_xpos=self.xpos,
                 theta=rope_args.get("theta", 10000),
+                interpolate_factor=rope_args.get("interpolate_factor", 1.0),
+                theta_rescale_factor=rope_args.get("theta_rescale_factor", 1.0),
                 xpos_scale_base=rope_args.get("xpos_scale_base", 512),
             )
             if self.rope
@@ -96,6 +98,17 @@ class FastMultiheadAttention(MultiheadAttention):
             )
 
         self.reset_parameters()
+
+    def _apply_rotary_pos_emb(self, q, k, is_inference=False):
+        if is_inference:
+            q, k = self.rotary_pos_embed.rotate_queries_with_cached_keys(q, k)
+        else:
+            if not self.xpos:
+                q = self.rotary_pos_embed.rotate_queries_or_keys(q)
+                k = self.rotary_pos_embed.rotate_queries_or_keys(k)
+            else:
+                q, k = self.rotary_pos_embed.rotate_queries_and_keys(q, k)
+        return q, k
 
     def reset_parameters(self):
         if self.qkv_same_dim:
@@ -268,20 +281,9 @@ class FastMultiheadAttention(MultiheadAttention):
         assert k.size(1) == src_len
 
         if self.rotary_pos_embed is not None:
-            q = rearrange(q, "(b h) t d -> b h t d", h=self.num_heads)
-            k = rearrange(k, "(b h) t d -> b h t d", h=self.num_heads)
-
-            if saved_state is not None:
-                q, k = self.rotary_pos_embed.rotate_queries_with_cached_keys(q, k)
-            else:
-                if not self.xpos:
-                    q = self.rotary_pos_embed.rotate_queries_or_keys(q)
-                    k = self.rotary_pos_embed.rotate_queries_or_keys(k)
-                else:
-                    q, k = self.rotary_pos_embed.rotate_queries_and_keys(q, k)
-
-            q = rearrange(q, "b h t d -> (b h) t d", h=self.num_heads)
-            k = rearrange(k, "b h t d -> (b h) t d", h=self.num_heads)
+            q, k = self._apply_rotary_pos_emb(
+                q, k, is_inference=saved_state is not None
+            )
 
         # This is part of a workaround to get around fork/join parallelism
         # not supporting Optional types.

@@ -138,6 +138,17 @@ class FastGroupedQueryAttention(MultiheadAttention):
         if self.bias_v is not None:
             nn.init.xavier_normal_(self.bias_v)
 
+    def _apply_rotary_pos_emb(self, q, k, is_inference=False):
+        if is_inference:
+            q, k = self.rotary_pos_embed.rotate_queries_with_cached_keys(q, k)
+        else:
+            if not self.xpos:
+                q = self.rotary_pos_embed.rotate_queries_or_keys(q)
+                k = self.rotary_pos_embed.rotate_queries_or_keys(k)
+            else:
+                q, k = self.rotary_pos_embed.rotate_queries_and_keys(q, k)
+        return q, k
+
     def _rearrange(self, x):
         if len(x.shape) == 3:
             return x
@@ -318,20 +329,8 @@ class FastGroupedQueryAttention(MultiheadAttention):
         assert k.size(-2) == src_len
 
         if self.rotary_pos_embed is not None:
-            if saved_state is not None:
-                q, k = self.rotary_pos_embed.rotate_queries_with_cached_keys(q, k)
-            else:
-                if not self.xpos:
-                    q = self.rotary_pos_embed.rotate_queries_or_keys(q)
-                    k = self.rotary_pos_embed.rotate_queries_or_keys(k)
-                else:
-                    q, k = self.rotary_pos_embed.rotate_queries_and_keys(q, k)
-
-            q = rearrange(
-                q, "b (h nq) t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
-            )
-            k = rearrange(
-                k, "b (h nq) t d -> (b h nq) t d", h=self.num_kv_heads, nq=self.q_per_kv
+            q, k = self._apply_rotary_pos_emb(
+                q, k, is_inference=saved_state is not None
             )
 
         # This is part of a workaround to get around fork/join parallelism
