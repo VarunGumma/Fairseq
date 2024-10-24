@@ -192,7 +192,6 @@ def do_setup(package_data):
         long_description_content_type="text/markdown",
         setup_requires=[
             "cython",
-            'numpy<1.20.0; python_version<"3.7"',
             'numpy; python_version>="3.7"',
             "setuptools>=18.0",
         ],
@@ -200,7 +199,6 @@ def do_setup(package_data):
             "cffi",
             "cython",
             "omegaconf",
-            'dataclasses; python_version<"3.7"',
             "hydra-core>=1.3.2",
             "numpy>=1.21.3",
             "regex",
@@ -211,7 +209,6 @@ def do_setup(package_data):
             "torchaudio>=2.4.1",
             "scikit-learn",
             "packaging",
-            "rotary-embedding-torch>=0.6.4",
         ],
         dependency_links=dependency_links,
         packages=find_packages(

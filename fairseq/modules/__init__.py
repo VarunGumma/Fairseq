@@ -52,6 +52,7 @@ from .espnet_multihead_attention import (
     RotaryPositionMultiHeadedAttention,
 )
 from .rotary_positional_embedding import RotaryPositionalEmbedding
+from .rotary_embedding import RotaryEmbedding
 from .positional_encoding import (
     RelPositionalEncoding,
 )
@@ -73,6 +74,7 @@ __all__ = [
     "EMAModuleConfig",
     "FactorizedEmbedding",
     "FastMultiheadAttention",
+    "FastGroupedQueryAttention"
     "FairseqDropout",
     "Fp32BatchNorm",
     "Fp32GroupNorm",
@@ -110,6 +112,7 @@ __all__ = [
     "PositionalEmbedding",
     "RelPositionMultiHeadedAttention",
     "RelPositionalEncoding",
+    "RotaryEmbedding",
     "RotaryPositionMultiHeadedAttention",
     "GLU",
     "MLP",

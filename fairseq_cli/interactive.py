@@ -164,15 +164,19 @@ def main(cfg: FairseqConfig):
         if model is None:
             continue
         if cfg.common.fp16:
+            logger.info("Using fp16 for optimization")
             model = model.half()
         if cfg.common.bf16:
+            logger.info("Using bf16 for optimization")
             model = model.to(torch.bfloat16)
         if use_cuda and not cfg.distributed_training.pipeline_model_parallel:
+            logger.info("Using CUDA for inference")
             model = model.cuda()
 
         model.prepare_for_inference_(cfg)
 
         if compile_mode is not None:
+            logger.info(f"Compiling model in {compile_mode} mode")
             model = torch.compile(model, mode=compile_mode)
 
         model.eval()

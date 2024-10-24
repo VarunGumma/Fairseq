@@ -98,7 +98,8 @@ def _main(cfg: DictConfig, output_file):
         arg_overrides=overrides,
         task=task,
         suffix=cfg.checkpoint.checkpoint_suffix,
-        strict=(cfg.checkpoint.checkpoint_shard_count == 1),
+        strict=(cfg.checkpoint.checkpoint_shard_count == 1)
+        and not cfg.checkpoint.load_checkpoint_liberally,
         num_shards=cfg.checkpoint.checkpoint_shard_count,
     )
 
@@ -130,16 +131,20 @@ def _main(cfg: DictConfig, output_file):
         if model is None:
             continue
         if cfg.common.fp16:
+            logger.info("Using fp16 for optimization")
             model = model.half()
         if cfg.common.bf16:
+            logger.info("Using bf16 for optimization")
             model = model.to(dtype=torch.bfloat16)
         if use_cuda and not cfg.distributed_training.pipeline_model_parallel:
+            logger.info("Using CUDA for inference")
             model = model.cuda()
 
         model.prepare_for_inference_(cfg)
 
         if compile_mode is not None:
-            model = torch.compile(model, mode=compile_mode)
+            logger.info(f"Compiling model.forward with {compile_mode}")
+            model.forward = torch.compile(model.forward, mode=compile_mode)
 
         model.eval()
 

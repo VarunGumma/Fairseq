@@ -15,11 +15,7 @@ from einops import rearrange
 from fairseq.modules.quant_noise import quant_noise
 from torch.nn.functional import scaled_dot_product_attention
 from fairseq.modules.multihead_attention import MultiheadAttention
-
-try:
-    from rotary_embedding_torch import RotaryEmbedding
-except ImportError:
-    raise ImportError("Please install the rotary-embedding-torch>=0.6.4")
+from fairseq.modules.rotary_embedding import RotaryEmbedding
 
 # HACK: This attention variant is mainly for speedup.
 # HACK: Attenion weights are internalized and None is returned for them.
@@ -74,17 +70,12 @@ class FastMultiheadAttention(MultiheadAttention):
         if self.rope:
             rope_args = json.loads(rope_args)
 
-        self.xpos = self.rope and is_decoder and rope_args.get("use_xpos", False)
-
         # partial rotation in RoPE
         self.rotary_pos_embed = (
             RotaryEmbedding(
                 dim=self.head_dim // 2,
-                use_xpos=self.xpos,
                 theta=rope_args.get("theta", 10000),
                 interpolate_factor=rope_args.get("interpolate_factor", 1.0),
-                theta_rescale_factor=rope_args.get("theta_rescale_factor", 1.0),
-                xpos_scale_base=rope_args.get("xpos_scale_base", 512),
             )
             if self.rope
             else None
@@ -100,14 +91,9 @@ class FastMultiheadAttention(MultiheadAttention):
         self.reset_parameters()
 
     def _apply_rotary_pos_emb(self, q, k, is_inference=False):
-        if is_inference:
-            q, k = self.rotary_pos_embed.rotate_queries_with_cached_keys(q, k)
-        else:
-            if not self.xpos:
-                q = self.rotary_pos_embed.rotate_queries_or_keys(q)
-                k = self.rotary_pos_embed.rotate_queries_or_keys(k)
-            else:
-                q, k = self.rotary_pos_embed.rotate_queries_and_keys(q, k)
+        offset = (k.shape[-2] - 1) if is_inference else 0
+        q = self.rotary_pos_embed.rotate_queries_or_keys(q, offset=offset)
+        k = self.rotary_pos_embed.rotate_queries_or_keys(k)
         return q, k
 
     def reset_parameters(self):
