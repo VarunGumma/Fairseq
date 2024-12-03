@@ -226,11 +226,6 @@ def main(cfg: FairseqConfig) -> None:
 
     criterion = task.build_criterion(cfg.criterion)
 
-    logger.info(model)
-    logger.info("task: {}".format(task.__class__.__name__))
-    logger.info("model: {}".format(model.__class__.__name__))
-    logger.info("criterion: {}".format(criterion.__class__.__name__))
-
     ### EXPERIMENTAL :: NOT TO BE USED UNTIL TESTED ###
     if getattr(cfg.model, "lora_args", False):
         logging.info("adding LoRA modules to model")
@@ -249,6 +244,11 @@ def main(cfg: FairseqConfig) -> None:
         replace_with_lora(model, lora_modules, lora_params)
         mark_only_lora_as_trainable(model, lora_bias)
     ### EXPERIMENTAL :: NOT TO BE USED UNTIL TESTED ###
+
+    logger.info(model)
+    logger.info("task: {}".format(task.__class__.__name__))
+    logger.info("model: {}".format(model.__class__.__name__))
+    logger.info("criterion: {}".format(criterion.__class__.__name__))
 
     logger.info(
         "num. trainable model params: {:,} ".format(

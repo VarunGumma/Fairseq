@@ -27,6 +27,7 @@ class RotaryEmbedding(torch.nn.Module):
         self, dim, theta=10000, interpolate_factor=1.0, cache_max_seq_len=8192
     ):
         super().__init__()
+        self.theta = theta
 
         freqs_ = 1.0 / (theta ** (torch.arange(0, dim, 2).float() / dim))
         self.cache_max_seq_len = cache_max_seq_len
@@ -35,6 +36,11 @@ class RotaryEmbedding(torch.nn.Module):
         self.freqs = torch.nn.Parameter(freqs_, requires_grad=False).to(device)
         self.apply_rotary_emb = staticmethod(apply_rotary_emb)
         self.precompute_freqs(cache_max_seq_len)
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(dim={self.freqs.shape[-1]}, theta={self.theta})"
+        )
 
     def precompute_freqs(self, max_seq_len):
         thetas = self.forward(max_seq_len, device=device)

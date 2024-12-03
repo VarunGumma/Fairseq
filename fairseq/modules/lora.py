@@ -115,6 +115,9 @@ class LoRALinear(nn.Linear, LoRALayer):
         self.weight.requires_grad = False
         self.reset_parameters()
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(in_features={self.in_features}, out_features={self.out_features}, r={self.lora_A.shape[0]})"
+
     def reset_parameters(self):
         nn.Linear.reset_parameters(self)
         if hasattr(self, "lora_A"):
