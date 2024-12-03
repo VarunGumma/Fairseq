@@ -49,7 +49,7 @@ from fairseq.modules.lora import *
 def mark_only_lora_as_trainable(model, bias="none") -> None:
     for n, p in model.named_parameters():
         p.requires_grad = "lora_" in n
-        logger.info(f"Setting {n} to {'trainable' if p.requires_grad else 'frozen'}")
+        # logger.info(f"Setting {n} to {'trainable' if p.requires_grad else 'frozen'}")
     if bias == "none":
         return
     elif bias == "all":
@@ -96,7 +96,7 @@ def replace_with_lora(
                     if module.bias is not None:
                         new_module.bias.data = module.bias.data
 
-            logger.info(f"Replacing {full_module_name} with LoRALinear")
+            # logger.info(f"Replacing {full_module_name} with LoRALinear")
             setattr(model, name, new_module)
 
         elif isinstance(module, torch.nn.Embedding) and any(
@@ -117,7 +117,7 @@ def replace_with_lora(
                 with torch.no_grad():
                     new_module.weight.data = module.weight.data
 
-            logger.info(f" | > Replacing {full_module_name} with LoRAEmbedding")
+            # logger.info(f" | > Replacing {full_module_name} with LoRAEmbedding")
             setattr(model, name, new_module)
 
         else:
