@@ -10,8 +10,8 @@ import sys
 
 from setuptools import Extension, find_packages, setup
 
-if sys.version_info < (3, 10):
-    sys.exit("Sorry, Python >= 3.10 is required for fairseq.")
+if sys.version_info < (3, 8):
+    sys.exit("Sorry, Python >= 3.8 is required for fairseq.")
 
 
 def write_version_py():
@@ -183,6 +183,8 @@ def do_setup(package_data):
         classifiers=[
             "Intended Audience :: Science/Research",
             "License :: OSI Approved :: MIT License",
+            "Programming Language :: Python :: 3.8",
+            "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
             "Programming Language :: Python :: 3.11",
             "Programming Language :: Python :: 3.12",
@@ -203,10 +205,10 @@ def do_setup(package_data):
             "numpy>=1.21.3",
             "regex",
             "sacrebleu>=1.4.12",
-            "torch>=2.4.1",
+            "torch>=2.1.0",
             "tqdm",
             "bitarray",
-            "torchaudio>=2.4.1",
+            "torchaudio>=2.1.0",
             "scikit-learn",
             "packaging",
         ],

@@ -164,11 +164,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             self.build_output_projection(cfg, dictionary, embed_tokens)
 
     def build_normalization(self, dim, rms=False):
-        return (
-            LayerNorm(dim, export=self.cfg.export)
-            if not rms
-            else RMSNorm(dim, export=self.cfg.export)
-        )
+        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
 
     def build_output_projection(self, cfg, dictionary, embed_tokens):
         if cfg.adaptive_softmax_cutoff is not None:

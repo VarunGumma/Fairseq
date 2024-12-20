@@ -29,10 +29,10 @@ class FairseqAdamConfig(FairseqDataclass):
     adam_eps: float = field(
         default=1e-8, metadata={"help": "epsilon for Adam optimizer"}
     )
-    weight_decay: float = field(default=0.0, metadata={"help": "weight decay"})
-    use_old_adam: bool = field(
-        default=False, metadata={"help": "Use fairseq.optim.adam.Adam"}
+    adam_stable: bool = field(
+        default=False, metadata={"help": "use stable Adam"}
     )
+    weight_decay: float = field(default=0.0, metadata={"help": "weight decay"})
     fp16_adam_stats: bool = field(
         default=False, metadata={"help": "use FP16 stats (with automatic scaling)"}
     )
@@ -54,8 +54,7 @@ class FairseqAdam(FairseqOptimizer):
         super().__init__(cfg)
         fused_adam_cls = get_fused_adam_class()
         use_fused_adam = (
-            not getattr(cfg, "use_old_adam", False)
-            and fused_adam_cls is not None
+            fused_adam_cls is not None
             and torch.cuda.is_available()
         )
         if getattr(cfg, "tpu", False):
@@ -144,10 +143,17 @@ class Adam(torch.optim.Optimizer):
         eps=1e-8,
         weight_decay=0,
         amsgrad=False,
+        stable=False,
     ):
         defaults = dict(
-            lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, amsgrad=amsgrad
+            lr=lr,
+            betas=betas,
+            eps=eps,
+            weight_decay=weight_decay,
+            amsgrad=amsgrad,
+            stable=stable,
         )
+        self.stable = stable
         super(Adam, self).__init__(params, defaults)
 
     @property
@@ -226,7 +232,23 @@ class Adam(torch.optim.Optimizer):
 
                 bias_correction1 = 1 - beta1 ** state["step"]
                 bias_correction2 = 1 - beta2 ** state["step"]
-                step_size = group["lr"] * math.sqrt(bias_correction2) / bias_correction1
+
+                if self.stable:
+                    rms = (
+                        torch.div(
+                            grad.pow(2),
+                            torch.maximum(
+                                exp_avg_sq, (self.eps**2) * torch.ones_like(exp_avg_sq)
+                            ),
+                        )
+                        .mean()
+                        .sqrt()
+                        .item()
+                    )
+                else:
+                    rms = 1.0
+
+                step_size = group["lr"] * math.sqrt(bias_correction2) / (bias_correction1 * max(1.0, rms))
 
                 if group["weight_decay"] != 0:
                     p_data_fp32.add_(

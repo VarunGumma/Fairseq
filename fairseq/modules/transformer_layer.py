@@ -190,11 +190,7 @@ class TransformerEncoderLayerBase(nn.Module):
             )
 
     def build_normalization(self, dim, rms=False):
-        return (
-            LayerNorm(dim, export=self.cfg.export)
-            if not rms
-            else RMSNorm(dim, export=self.cfg.export)
-        )
+        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
 
     def residual_connection(self, x, residual):
         return residual + x
@@ -452,24 +448,10 @@ class TransformerDecoderLayerBase(nn.Module):
             )
 
     def build_encoder_attention(self, embed_dim, cfg):
-        if (
-            self.attn_implementation.startswith("fast_gqa")
-            and getattr(cfg.decoder, "kv_attention_heads", None) is not None
-        ):
-            return FastGroupedQueryAttention(
-                embed_dim,
-                cfg.decoder.attention_heads,
-                cfg.decoder.kv_attention_heads,
-                kdim=cfg.encoder.embed_dim,
-                vdim=cfg.encoder.embed_dim,
-                dropout=cfg.attention_dropout,
-                encoder_decoder_attention=True,
-                is_decoder=True,
-                fused_qkv=False,
-                q_noise=self.quant_noise,
-                qn_block_size=self.quant_noise_block_size,
-            )
-        elif self.attn_implementation.startswith("fast"):
+        is_fused = self.attn_implementation.endswith("fused")
+        # GQA is not supported with encoder-decoder attention
+        # it only works for self-attention
+        if self.attn_implementation.startswith("fast"):
             return FastMultiheadAttention(
                 embed_dim,
                 cfg.decoder.attention_heads,
@@ -478,7 +460,7 @@ class TransformerDecoderLayerBase(nn.Module):
                 dropout=cfg.attention_dropout,
                 encoder_decoder_attention=True,
                 is_decoder=True,
-                fused_qkv=False,
+                fused_qkv=is_fused,
                 q_noise=self.quant_noise,
                 qn_block_size=self.quant_noise_block_size,
             )
@@ -502,11 +484,7 @@ class TransformerDecoderLayerBase(nn.Module):
         return residual + x
 
     def build_normalization(self, dim, rms=False):
-        return (
-            LayerNorm(dim, export=self.cfg.export)
-            if not rms
-            else RMSNorm(dim, export=self.cfg.export)
-        )
+        return LayerNorm(dim, export=self.cfg.export) if not rms else RMSNorm(dim)
 
     def forward(
         self,

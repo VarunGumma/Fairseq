@@ -132,7 +132,7 @@ class TransformerEncoderBase(FairseqEncoder):
         return (
             LayerNorm(dim, export=self.cfg.export)
             if not rms
-            else RMSNorm(dim, export=self.cfg.export)
+            else RMSNorm(dim)
         )
 
     def build_encoder_layer(self, cfg):

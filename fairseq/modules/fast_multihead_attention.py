@@ -64,7 +64,7 @@ class FastMultiheadAttention(MultiheadAttention):
         del self.dropout_module
 
         self.is_decoder = is_decoder
-        self.fused_qkv = fused_qkv and self_attention
+        self.fused_qkv = fused_qkv
         self.rope = rope_args is not None and self_attention
 
         if self.rope:
@@ -82,11 +82,28 @@ class FastMultiheadAttention(MultiheadAttention):
         )
 
         if self.fused_qkv:
-            # remove the q_proj, k_proj, v_proj from the parent class
-            del self.q_proj, self.k_proj, self.v_proj
-            self.qkv_proj = quant_noise(
-                nn.Linear(embed_dim, 3 * embed_dim, bias=bias), q_noise, qn_block_size
-            )
+            if self_attention:
+                # fused qkv for self-attention
+                # all of W_q, W_k, W_v are fused into one weight
+                del self.q_proj, self.k_proj, self.v_proj
+                self.qkv_proj = quant_noise(
+                    nn.Linear(embed_dim, 3 * embed_dim, bias=bias),
+                    q_noise,
+                    qn_block_size,
+                )
+            elif encoder_decoder_attention:
+                # in case of encoder-decoder attention, q is from encoder and kv is from decoder
+                # only W_k and W_v are fused
+                del self.k_proj, self.v_proj
+                self.kv_proj = quant_noise(
+                    nn.Linear(embed_dim, 2 * embed_dim, bias=bias),
+                    q_noise,
+                    qn_block_size,
+                )
+            else:
+                raise NotImplementedError(
+                    "Fused qkv is only supported for self-attention or encoder-decoder attention. Either of the two must be True."
+                )
 
         self.reset_parameters()
 
@@ -102,6 +119,8 @@ class FastMultiheadAttention(MultiheadAttention):
             # the scaled initialization
             if hasattr(self, "qkv_proj"):
                 nn.init.xavier_uniform_(self.qkv_proj.weight, gain=1 / math.sqrt(2))
+            elif hasattr(self, "kv_proj"):
+                nn.init.xavier_uniform_(self.kv_proj.weight, gain=1 / math.sqrt(2))
             else:
                 nn.init.xavier_uniform_(self.k_proj.weight, gain=1 / math.sqrt(2))
                 nn.init.xavier_uniform_(self.v_proj.weight, gain=1 / math.sqrt(2))
@@ -186,8 +205,11 @@ class FastMultiheadAttention(MultiheadAttention):
                 assert value is None
                 k = v = None
             else:
-                k = self.k_proj(key)
-                v = self.v_proj(key)
+                if not self.fused_qkv:
+                    k = self.k_proj(key)
+                    v = self.v_proj(key)
+                else:
+                    k, v = self.kv_proj(key).chunk(2, dim=-1)
 
         if self.bias_k is not None:
             assert self.bias_v is not None
