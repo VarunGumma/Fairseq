@@ -69,7 +69,7 @@ class FastMultiheadAttention(MultiheadAttention):
 
         if self.rope:
             rope_args = json.loads(rope_args)
-
+            
         # partial rotation in RoPE
         self.rotary_pos_embed = (
             RotaryEmbedding(

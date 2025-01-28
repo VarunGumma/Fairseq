@@ -17,9 +17,15 @@ def rotate_half(x):
 def apply_rotary_emb(cos, sin, t):
     rot_dim = cos.shape[-1]
     assert rot_dim <= t.shape[-1] and cos.shape == sin.shape
-    t_left, t_right = t[..., :rot_dim], t[..., rot_dim:]
-    t_transformed = (t_left * cos) + (rotate_half(t_left) * sin)
-    return torch.cat((t_transformed, t_right), dim=-1).type(t.dtype)
+
+    if rot_dim == t.shape[-1]:
+        # Directly rotate the entire 't' without slicing/concatenating
+        return (t * cos + rotate_half(t) * sin).type(t.dtype)
+    else:
+        # Partial rotation: slice off the piece we rotate, then recombine
+        t_left, t_right = t[..., :rot_dim], t[..., rot_dim:]
+        t_transformed = (t_left * cos) + (rotate_half(t_left) * sin)
+        return torch.cat((t_transformed, t_right), dim=-1).type(t.dtype)
 
 
 class RotaryEmbedding(torch.nn.Module):
@@ -27,6 +33,7 @@ class RotaryEmbedding(torch.nn.Module):
         self, dim, theta=10000, interpolate_factor=1.0, cache_max_seq_len=8192
     ):
         super().__init__()
+        self.dim = dim
         self.theta = theta
 
         freqs_ = 1.0 / (theta ** (torch.arange(0, dim, 2).float() / dim))
@@ -39,7 +46,7 @@ class RotaryEmbedding(torch.nn.Module):
 
     def __repr__(self):
         return (
-            f"{self.__class__.__name__}(dim={self.freqs.shape[-1]}, theta={self.theta})"
+            f"{self.__class__.__name__}(dim={self.dim}, theta={self.theta})"
         )
 
     def precompute_freqs(self, max_seq_len):
