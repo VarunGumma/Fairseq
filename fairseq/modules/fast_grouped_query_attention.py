@@ -78,7 +78,7 @@ class FastGroupedQueryAttention(MultiheadAttention):
             RotaryEmbedding(
                 dim=self.head_dim // 2,
                 theta=rope_args.get("theta", 10000),
-                interpolate_factor=rope_args.get("interpolate_factor", 1.0),
+                scaling_factor=rope_args.get("scaling_factor", 1.0),
             )
             if self.rope
             else None
