@@ -29,17 +29,17 @@ def apply_rotary_emb(cos, sin, t):
 
 
 class RotaryEmbedding(torch.nn.Module):
-    def __init__(self, dim, theta=10000, scaling_factor=1.0, max_seq_len=4096):
+    def __init__(self, dim, theta=10000, scaling_factor=1.0, max_seq_len=5120):
         super().__init__()
         self.dim = dim
         self.theta = theta
-
-        inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
         self.max_seq_len = max_seq_len
         self.scaling_factor = scaling_factor
+        self.apply_rotary_emb = staticmethod(apply_rotary_emb)
+
+        inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2, dtype=torch.float32, device=device) / dim))
 
         self.register_buffer("inv_freq", inv_freq, persistent=False)
-        self.apply_rotary_emb = staticmethod(apply_rotary_emb)
         self.precompute_freqs(max_seq_len)
 
     def __repr__(self):
